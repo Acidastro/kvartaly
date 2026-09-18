@@ -55,9 +55,15 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .cell.mort .nm{text-decoration:line-through}
 .cell .own{position:absolute;inset:0;border:3px solid transparent;pointer-events:none}
 /* уровни идут в строке с ценой, а не поверх названия — иначе на узком экране они наезжают на текст */
-.cell .lv{display:flex;gap:2px;flex:none}
+.cell .lv{display:flex;gap:2px;flex:none;align-items:center}
 .cell .lv i{width:5px;height:5px;border-radius:50%;background:var(--ink)}
 @media (max-width:640px){.cell .lv i{width:4px;height:4px}}
+/* последний уровень — не ещё одна точка, а золотой ромб: его видно с любого расстояния */
+.cell .lv.max b{display:block;width:10px;height:10px;border-radius:2px;transform:rotate(45deg);
+  background:linear-gradient(135deg,#FFE28F,#E0A100);box-shadow:0 0 6px rgba(240,184,42,.8)}
+@media (max-width:640px){.cell .lv.max b{width:8px;height:8px}}
+.cell.royal::after{content:'';position:absolute;inset:3px;border:1px solid rgba(240,184,42,.55);border-radius:2px;pointer-events:none}
+.cell.royal .nm{color:#F0B82A}
 .cell.sel{box-shadow:inset 0 0 0 2px var(--ink)}
 .dirb{position:absolute;left:3px;bottom:2px;font-size:1.35em;line-height:1;font-weight:700}
 .tokens{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-top:2px;min-height:0}
@@ -185,13 +191,18 @@ tr.out td{opacity:.5}
 <div class="overlay" id="overlay" hidden><div class="card" id="card" role="dialog" aria-modal="true"></div></div>
 <script>
 /* ---------- поле-восьмёрка ---------- */
+/* Значения объектов по уровням — единый источник правды для описаний и для расчёта.
+   Длина массива задаёт число уровней: у Мэрии их четыре, у остальных три. */
+const OBJ_VALS={bank:[.08,.16,.32],market:[.15,.3,.5],hall:[2,4,8,10]};
+// комиссия Банка: процент наличных, который платит каждый прошедший мимо, кроме владельца
+const BANK_FEE=[.02,.03,.04];
 const OBJ_DEF={
-  bank:{icon:'',name:'Банк',price:180,desc:l=>`улучшения ваших улиц дешевле на ${[20,35,50][l]}%`},
+  bank:{icon:'',name:'Банк',price:180,desc:l=>`покупка улиц дешевле на ${Math.round(OBJ_VALS.bank[l]*100)}%, прошедшие мимо отдают вам ${Math.round(BANK_FEE[l]*100)}% своих наличных`},
   // Рынок держит бонус аренды за двоих: Депо с поля убрано, а без него объект почти не работал бы
-  market:{icon:'',name:'Рынок',price:200,desc:l=>`+${[15,30,50][l]}% аренды на всех ваших улицах`},
-  hall:{icon:'',name:'Мэрия',price:160,desc:l=>`+${[5,10,15][l]} за каждую вашу улицу, когда вы входите в центр`},
+  market:{icon:'',name:'Рынок',price:200,desc:l=>`+${Math.round(OBJ_VALS.market[l]*100)}% аренды на всех ваших улицах`},
+  hall:{icon:'',name:'Мэрия',price:160,desc:l=>`+${OBJ_VALS.hall[l]} за каждую вашу улицу, когда вы входите в центр`},
 };
-const FEE=[15,30,50];
+const FEE=[15,30,50,70];
 const BAIL=100;
 const CARDS={
   free:{n:'Освобождение',d:'Выйти из тюрьмы бесплатно.'},
@@ -213,13 +224,13 @@ const COORD=[[4,0],[3,0],[2,0],[1,0],[0,0],[0,1],[0,2],
   [0,3],[1,3],[2,3],[3,3],[4,3],
   [4,2],[4,1]];
 const SPEC={
-  0:{type:'start',name:'Старт'},1:P('Сад',60,0),2:{type:'chance',name:'Шанс'},3:P('Река',100,1),4:{type:'gojail',name:'Арест'},
+  0:{type:'start',name:'Старт'},1:P('Сад',60,0),2:P('Роща',80,0),3:P('Река',100,1),4:{type:'gojail',name:'Арест'},
   5:P('Мост',110,1),6:P('Форум',260,5),
   7:{type:'chance',name:'Шанс'},
   8:O('bank'),9:O('market'),10:O('hall'),
   11:{type:'tax',name:'Налог',amount:60},
   12:P('Торг',140,2),13:P('Склад',150,2),14:P('Порт',160,2),
-  15:P('Театр',190,3),16:{type:'chance',name:'Шанс'},17:P('Музей',200,3),18:{type:'jail',name:'СИЗО'},
+  15:P('Театр',190,3),16:P('Опера',200,3),17:P('Музей',210,3),18:{type:'jail',name:'СИЗО'},
   19:P('Замок',220,4),20:P('Парк',240,4),
   26:P('Шпиль',300,5),27:P('Луг',70,0),
 };
@@ -233,7 +244,7 @@ const OBJ_IDX=Object.fromEntries(OBJS.map(i=>[CELLS[i].key,i]));
 const GROUPS=[0,1,2,3,4,5];
 const GROUP=GROUPS.map(g=>`var(--g${g})`);
 const GNAME=['Окраина','Река','Порт','Культурный','Парадный','Центр'];
-const MULT=[1,3,6,10];
+const MULT=[1,3,6,10,15];   // уровни улиц: 0 — без улучшений, 4 — королевская прокачка
 const COLORS=['var(--p0)','var(--p1)','var(--p2)','var(--p3)'];
 const NAMES=['Вы','Сова','Ёж','Кот'];
 const RISK=[0,120,250,60];
@@ -309,7 +320,9 @@ const objOwned=pid=>OBJS.filter(i=>owner[i]===pid).length;
 const myObj=pid=>OBJS.find(i=>owner[i]===pid)??-1;
 const canTakeObj=(pid,give=-1)=>objOwned(pid)===0||(give>=0&&CELLS[give].type==='obj'&&owner[give]===pid);
 const tradeAllowed=(pid,gain,give)=>gain<0||CELLS[gain].type!=='obj'||canTakeObj(pid,give);
-const eff=(pid,key,arr)=>{const l=objLv(pid,key);return l<0?0:arr[l]};
+const eff=(pid,key)=>{const l=objLv(pid,key);return l<0?0:OBJ_VALS[key][l]};
+// предельный уровень зависит от клетки: у улиц он один, у объектов — свой на каждый
+const maxLv=i=>CELLS[i].type==='obj'?OBJ_VALS[CELLS[i].key].length-1:MULT.length-1;
 const baseRent=i=>Math.round(CELLS[i].price*.12);
 function rentOf(i){
   const c=CELLS[i],o=owner[i];
@@ -319,15 +332,17 @@ function rentOf(i){
   let r=baseRent(i);if(!level[i]&&full)r*=2;r*=MULT[level[i]];
   return Math.round(r*(1+objBonus(o)));
 }
-const objBonus=o=>eff(o,'market',[.15,.3,.5]);
-const upCost=i=>CELLS[i].type==='obj'?Math.round(CELLS[i].price*.75):Math.round(CELLS[i].price*.6*(1-eff(owner[i],'bank',[.2,.35,.5])));
+const objBonus=o=>eff(o,'market');
+const upCost=i=>CELLS[i].type==='obj'?Math.round(CELLS[i].price*.75):Math.round(CELLS[i].price*.6);
+// Банк удешевляет покупку клеток — и с руки, и на аукционе
+const buyPrice=(pid,base)=>Math.round(base*(1-eff(pid,'bank')));
 const mortVal=i=>Math.round(CELLS[i].price/2);
 const unmortCost=i=>Math.round(CELLS[i].price*.55);
 const groupClean=i=>inGroup(CELLS[i].g).every(j=>!level[j]);
 const tradable=i=>owner[i]>=0&&!mort[i];
 const upVal=i=>Math.round(CELLS[i].price*(CELLS[i].type==='obj'?.75:.6));
 const streetsOf=pid=>PROPS.filter(i=>owner[i]===pid).length;
-const canUpgrade=(pid,i)=>CELLS[i].type==='obj'?owner[i]===pid&&level[i]<2:owner[i]===pid&&hasGroup(pid,CELLS[i].g)&&level[i]<3&&!inGroup(CELLS[i].g).some(j=>mort[j]);
+const canUpgrade=(pid,i)=>CELLS[i].type==='obj'?owner[i]===pid&&level[i]<maxLv(i):owner[i]===pid&&hasGroup(pid,CELLS[i].g)&&level[i]<maxLv(i)&&!inGroup(CELLS[i].g).some(j=>mort[j]);
 const owned=pid=>CELLS.map((_,i)=>i).filter(i=>owner[i]===pid);
 const worth=p=>p.money+owned(p.id).reduce((s,i)=>s+(mort[i]?mortVal(i):CELLS[i].price+level[i]*upCost(i)),0);
 const D=()=>DIFF[diff];
@@ -452,7 +467,8 @@ function renderCells(){
   const mob=isMobile();   // на узкой клетке слово «сбор» не помещается рядом с точками уровней
   CELLS.forEach((c,i)=>{
     const el=$('c'+i);let h='';const o=owner[i]??-1;
-    const lv=level[i]?`<span class="lv">${'<i></i>'.repeat(level[i])}</span>`:'';
+    const royal=level[i]>0&&level[i]===maxLv(i);
+    const lv=level[i]?(royal?'<span class="lv max"><b></b></span>':`<span class="lv">${'<i></i>'.repeat(level[i])}</span>`):'';
     if(c.type==='prop'){
       h+=`<div class="band" style="background:${GROUP[c.g]}"></div><div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:mort[i]?'в залоге':(o>0&&heat[i]?'−':'')+rentOf(i)}</span>${lv}</div>`;
     } else if(c.type==='obj'){
@@ -464,7 +480,7 @@ function renderCells(){
     if(o>=0)h+=`<div class="own" style="border-color:${COLORS[o]}"></div>`;
     h+=`<div class="tokens">${players.filter(p=>p.alive&&cellAt(p.pos)===i).map(p=>`<span class="tk"><span class="tok ${p.id===0?'me':''} ${hop===p.id?'hop':''}" style="background:${COLORS[p.id]};color:${COLORS[p.id]}">${p.id===0&&!busy?'<span class="pulse"></span>':''}</span><span class="tarr" style="color:${COLORS[p.id]}">${p.jail?'⏸':routeArrow(p.pos)}</span></span>`).join('')}</div>`;
     el.innerHTML=h;
-    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
+    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
     el.style.background=heat[i]?`color-mix(in srgb, var(--hot) ${Math.round(10+heat[i]*170)}%, ${c.type==='obj'?'var(--objbg)':'var(--board)'})`:'';
     el.setAttribute('aria-label',c.name+(heat[i]?', опасная клетка':''));
   });
@@ -508,12 +524,12 @@ function renderInfo(){
   if(c.type==='obj'){
     h=`<p><b>${c.name}</b></p><p>Уникальный объект в центре восьмёрки, через него проходят дважды за круг. Больше одного объекта в руках держать нельзя: второй не купить, не выиграть на аукционе и не выменять — только обменять свой на чужой.</p>
       <p>Цена ${c.price}, улучшение ${upCost(sel)}.</p>
-      <p class="mut">Уровень 1: ${c.desc(0)}.<br>Уровень 2: ${c.desc(1)}.<br>Уровень 3: ${c.desc(2)}.</p>
-      <p class="mut">Сбор с других игроков: ${FEE.join(' / ')}.</p>
+      <p class="mut">${OBJ_VALS[c.key].map((_,l)=>`Уровень ${l+1}: ${c.desc(l)}`).join('.<br>')}.</p>
+      <p class="mut">Сбор с других игроков: ${FEE.slice(0,maxLv(sel)+1).join(' / ')}.</p>
       <p>Владелец: ${o>=0?players[o].name+`, уровень ${level[sel]+1}. Сейчас: ${c.desc(level[sel])}`:'нет'}.</p>`;
     if(players.length&&!over&&o===0){
       let why='';
-      if(level[sel]>=2)why='Объект улучшен до максимума.';
+      if(level[sel]>=maxLv(sel))why='Объект улучшен до максимума.';
       else if(!idle())why='Улучшать можно в свой ход до броска кубиков.';
       else if(me.money<upCost(sel))why=`Не хватает денег: нужно ${upCost(sel)}.`;
       h+=`<div class="actions"><button class="btn" data-act="up" ${why?'disabled':''}>Улучшить за ${upCost(sel)}</button></div>${why?`<p class="mut">${why}</p>`:''}`;
@@ -522,7 +538,7 @@ function renderInfo(){
   } else {
     const b=baseRent(sel);
     h=`<p><b>${c.name}</b></p><p>Цена ${c.price}, улучшение ${upCost(sel)}, залог ${mortVal(sel)}.</p>
-      <p class="mut">Аренда: ${b}, с кварталом ${b*2}, улучшения ${b*3} / ${b*6} / ${b*10}. Квартал «${GNAME[c.g]}», в нём ${gsize(c.g)} улицы: ${inGroup(c.g).map(j=>CELLS[j].name).join(', ')}.</p>
+      <p class="mut">Аренда: ${b}, с кварталом ${b*2}, улучшения ${MULT.slice(1,-1).map(m=>b*m).join(' / ')}, королевская ${b*MULT[MULT.length-1]}. Квартал «${GNAME[c.g]}», в нём ${gsize(c.g)} улицы: ${inGroup(c.g).map(j=>CELLS[j].name).join(', ')}.</p>
       <p>Владелец: ${o>=0?players[o].name:'нет'}${mort[sel]?', в залоге':''}${o>=0&&!mort[sel]?`. Аренда сейчас ${rentOf(sel)}`:''}${level[sel]?`, уровень ${level[sel]}`:''}.</p>`;
     if(o>=0&&!mort[sel]&&objBonus(o)>0)h+=`<p class="mut">Рынок владельца добавляет +${Math.round(objBonus(o)*100)}% аренды.</p>`;
     if(players.length&&!over&&o===0){
@@ -530,7 +546,7 @@ function renderInfo(){
       let why='';
       if(missing.length)why=`Для улучшения нужен весь квартал. Не хватает: ${missing.join(', ')}.`;
       else if(inGroup(c.g).some(j=>mort[j]))why='Выкупите улицы квартала из залога, чтобы улучшать.';
-      else if(level[sel]>=3)why='Улица улучшена до максимума.';
+      else if(level[sel]>=maxLv(sel))why='Улица улучшена до максимума.';
       else if(!idle())why='Действия с улицами доступны в свой ход до броска кубиков.';
       else if(me.money<upCost(sel))why=`Не хватает денег на улучшение: нужно ${upCost(sel)}.`;
       h+=`<div class="actions"><button class="btn" data-act="up" ${why?'disabled':''}>Улучшить за ${upCost(sel)}</button>`;
@@ -637,7 +653,7 @@ function showSetup(){
   const s=loadSave();
   const resumable=!!(players.length&&!over);   // из настроек можно вернуться только в идущую партию
   overlay(`<h2 class="ot">Новая партия</h2>
-    <p class="mut">Поле — восьмёрка. Центральный столбец с тремя объектами вы проходите дважды за круг. Объекты усиливают ваши улицы и улучшаются до третьего уровня, но каждому игроку доступен только один объект.</p>
+    <p class="mut">Поле — восьмёрка. Центральный столбец с тремя объектами вы проходите дважды за круг. Объекты усиливают ваши улицы, но каждому игроку доступен только один. Улицы улучшаются четыре раза: последняя, королевская прокачка помечается золотым ромбом и стоит того.</p>
     ${seg('Соперники','bots',[[1,'1 бот'],[2,'2 бота'],[3,'3 бота']])}
     ${seg('Сложность ботов','diff',[['easy','Лёгкие'],['normal','Обычные'],['hard','Сложные']])}
     <p class="mut">${DIFF_DESC[settings.diff]}</p>
@@ -735,7 +751,8 @@ async function applyPending(i){
 function ownAction(a,i){
   if(!idle()||owner[i]!==0)return;
   const me=players[0];
-  if(a==='up'&&canUpgrade(0,i)&&me.money>=upCost(i)){me.money-=upCost(i);level[i]++;log(`Вы улучшили ${label(i)} до уровня ${level[i]+(CELLS[i].type==='obj'?1:0)}`);sfx.buy()}
+  if(a==='up'&&canUpgrade(0,i)&&me.money>=upCost(i)){me.money-=upCost(i);level[i]++;
+    log(level[i]===maxLv(i)?`Вы довели ${label(i)} до королевского уровня`:`Вы улучшили ${label(i)} до уровня ${level[i]+(CELLS[i].type==='obj'?1:0)}`);sfx.buy()}
   if(a==='sell'&&level[i]&&CELLS[i].type==='prop'){level[i]--;me.money+=Math.round(upCost(i)/2);log(`Вы продали улучшение на ${label(i)}`)}
   if(a==='mort'&&CELLS[i].type==='prop'&&!mort[i]&&groupClean(i)){mort[i]=true;me.money+=mortVal(i);log(`Вы заложили ${label(i)}`)}
   if(a==='unmort'&&mort[i]&&me.money>=unmortCost(i)){mort[i]=false;me.money-=unmortCost(i);log(`Вы выкупили ${label(i)} из залога`)}
@@ -779,7 +796,20 @@ async function move(p,steps){
     if(dir>0&&p.pos===0){p.money+=200;log(`${p.name} проходит Старт: +200`)}
     if(dir>0&&CENTER_IN.includes(p.pos)){
       const lv=objLv(p.id,'hall');
-      if(lv>=0){const n=PROPS.filter(i=>owner[i]===p.id).length*[5,10,15][lv];if(n){p.money+=n;log(`${p.name} получает ${n} от Мэрии`)}}
+      if(lv>=0){const n=PROPS.filter(i=>owner[i]===p.id).length*OBJ_VALS.hall[lv];if(n){p.money+=n;log(`${p.name} получает ${n} от Мэрии`)}}
+    }
+    // обратный Старт: мимо чужого Банка нельзя пройти бесплатно
+    if(dir>0){
+      const bi=OBJ_IDX.bank,bo=owner[bi];
+      if(cellAt(p.pos)===bi&&bo>=0&&bo!==p.id&&players[bo].alive){
+        const n=Math.round(p.money*BANK_FEE[level[bi]]);
+        if(n>0){
+          p.money-=n;players[bo].money+=n;
+          players[bo].st.rentIn+=n;p.st.rentOut+=n;cellRent[bi]+=n;
+          // комиссия срабатывает дважды за круг у каждого — в лог пишем только то, что касается игрока
+          if(p.id===0||bo===0)log(`${p.name} платит ${players[bo].name} комиссию ${n} за проход мимо Банка`);
+        }
+      }
     }
     hop=p.id;sfx.step();renderCells();renderPlayers();await wait(140);
   }
@@ -861,12 +891,13 @@ async function land(p){
         status=`${p.name}: объект уже есть в центре — ${label(i)} сразу уходит на аукцион`;log(status);render();await wait(600);
       }
       else if(p.bot)buy=botBuy(p,i);
-      else if(p.money>=c.price){
+      else if(p.money>=buyPrice(p.id,c.price)){
         setSel(i);
-        const txt=c.type==='obj'?`${label(i)} свободен. Купить за ${c.price}? Даёт: ${c.desc(0)}. Если откажетесь, объект уйдёт на аукцион.`:`${c.name} свободна. Купить за ${c.price}? Если откажетесь, улица уйдёт на аукцион.`;
+        const pr=buyPrice(p.id,c.price),disc=pr<c.price?` (Банк: вместо ${c.price})`:'';
+        const txt=c.type==='obj'?`${label(i)} свободен. Купить за ${pr}${disc}? Даёт: ${c.desc(0)}. Если откажетесь, объект уйдёт на аукцион.`:`${c.name} свободна. Купить за ${pr}${disc}? Если откажетесь, улица уйдёт на аукцион.`;
         buy=await ask(txt,[['Купить',true],['На аукцион',false,true]]);
       }
-      if(buy){let cost=c.price;if(p.discount){p.discount=false;const ci=p.cards.indexOf('discount');if(ci>=0)p.cards.splice(ci,1);cost=Math.round(cost*.7);log(`${p.name} применяет карточку «Скидка»`)}p.money-=cost;owner[i]=p.id;p.st.bought++;status=`${p.name} покупает ${label(i)} за ${cost}`;log(status);sfx.buy();render();await wait(500)}
+      if(buy){let cost=buyPrice(p.id,c.price);if(p.discount){p.discount=false;const ci=p.cards.indexOf('discount');if(ci>=0)p.cards.splice(ci,1);cost=Math.round(cost*.7);log(`${p.name} применяет карточку «Скидка»`)}p.money-=cost;owner[i]=p.id;p.st.bought++;status=`${p.name} покупает ${label(i)} за ${cost}`;log(status);sfx.buy();render();await wait(500)}
       else await auction(i,p);
     } else if(o!==p.id){
       if(mort[i]){status=`${c.name} в залоге, аренду не платят`;log(status)}
@@ -909,14 +940,14 @@ async function auction(i,starter){
       render();if(q.bot)await wait(400);
     }
   }
-  if(high){let cost=bid;if(high.discount){high.discount=false;const ci=high.cards.indexOf('discount');if(ci>=0)high.cards.splice(ci,1);cost=Math.round(cost*.7);log(`${high.name} применяет карточку «Скидка»`)}high.money-=cost;owner[i]=high.id;high.st.bought++;status=`${high.name} выигрывает аукцион: ${label(i)} за ${bid}`;sfx.buy()}
+  if(high){let cost=buyPrice(high.id,bid);if(high.discount){high.discount=false;const ci=high.cards.indexOf('discount');if(ci>=0)high.cards.splice(ci,1);cost=Math.round(cost*.7);log(`${high.name} применяет карточку «Скидка»`)}high.money-=cost;owner[i]=high.id;high.st.bought++;status=`${high.name} выигрывает аукцион: ${label(i)} за ${cost}`;sfx.buy()}
   else status=`На ${label(i)} никто не поставил`;
   log(status);render();await wait(800);
 }
 
 /* ---------- боты ---------- */
 function botBuy(p,i){
-  const c=CELLS[i],left=p.money-c.price;
+  const c=CELLS[i],left=p.money-buyPrice(p.id,c.price);
   if(left<0)return false;
   if(c.type==='obj'&&objOwned(p.id)>0)return false;
   if(D()<0)return Math.random()<.6&&left>=30;
