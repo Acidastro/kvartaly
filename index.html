@@ -15,28 +15,30 @@
   /* игроки — насыщенные цвета, кварталы — приглушённые: иначе на мелкой клетке
      не отличить полоску группы от метки владельца */
   --p0:#2F5DFF; --p1:#D96A00; --p2:#0F8C6B; --p3:#8E2FA8;
-  --g0:#B3A08F; --g1:#93B8CE; --g2:#9BBE95; --g3:#D9C48C; --g4:#D3A0A8; --g5:#A9A6C8;
+  --g0:#A8825E; --g1:#3E93D6; --g2:#4FA84A; --g3:#E0A92E; --g4:#DE5E7E; --g5:#7B5FD0;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#151A22; --board:#1E2530; --ink:#E7EAF0; --muted:#98A0B0; --line:#343D4B; --center:#192029; --hot:#FF6B6B; --objbg:#232D3C;
     --p0:#6F8CFF; --p1:#FF9A3C; --p2:#25C08A; --p3:#C86BE8;
-    --g0:#A8998C; --g1:#8FAFC4; --g2:#93B48F; --g3:#CBB887; --g4:#C79AA1; --g5:#A09EBE;
+    --g0:#C89A6E; --g1:#5FB4F2; --g2:#68CC62; --g3:#F2C452; --g4:#F2789A; --g5:#9B7BF0;
   }
 }
 :root[data-theme="dark"]{
   --bg:#151A22; --board:#1E2530; --ink:#E7EAF0; --muted:#98A0B0; --line:#343D4B; --center:#192029; --hot:#FF6B6B; --objbg:#232D3C;
   --p0:#6F8CFF; --p1:#FF9A3C; --p2:#25C08A; --p3:#C86BE8;
-    --g0:#A8998C; --g1:#8FAFC4; --g2:#93B48F; --g3:#CBB887; --g4:#C79AA1; --g5:#A09EBE;
+    --g0:#C89A6E; --g1:#5FB4F2; --g2:#68CC62; --g3:#F2C452; --g4:#F2789A; --g5:#9B7BF0;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Rubik,system-ui,-apple-system,"Segoe UI",sans-serif;
-  min-height:var(--app-h,100dvh);-webkit-tap-highlight-color:transparent}
+  min-height:var(--app-h,100dvh);-webkit-tap-highlight-color:transparent;
+  /* на большом экране (Telegram Desktop) контент центрируем, иначе всё жмётся кверху */
+  display:flex;flex-direction:column;justify-content:safe center}
 button,select,input{font:inherit;color:inherit}
 button{cursor:pointer;touch-action:manipulation}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--p0);outline-offset:2px}
-.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:14px;
+.wrap{width:100%;max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:14px;
   padding:16px;
   padding-top:calc(16px + env(safe-area-inset-top));
   padding-bottom:calc(16px + env(safe-area-inset-bottom))}
@@ -51,7 +53,8 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .cell.corner{background:var(--center)}
 .cell.corner .nm{font-weight:600}
 .cell.obj{background:var(--objbg)}
-.cell .band{height:5px;margin:-3px -4px 3px;flex:none}
+.cell .band{height:8px;margin:-3px -4px 4px;flex:none;box-shadow:inset 0 -1px 0 rgba(0,0,0,.3)}
+@media (max-width:640px){.cell .band{height:6px;margin-bottom:3px}}
 .cell .nm{font-weight:500;padding-right:11px}
 .cell .ico{font-size:1.5em;line-height:1}
 .cell .pr{color:var(--muted);margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:3px}
@@ -164,6 +167,17 @@ th{font-weight:500;color:var(--muted);font-size:12px}
 td .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 tr.out td{opacity:.5}
 @media (prefers-reduced-motion: reduce){.tok.hop{animation:none}}
+
+/* ---------- большой экран: Telegram Desktop и браузер ---------- */
+@media (min-width:900px){
+  .wrap{max-width:1180px;gap:18px}
+  /* доска растёт до доступной высоты, сохраняя пропорции: ширина = высота × 7/5 */
+  .board{width:min(100%,calc((var(--app-h,100dvh) - 330px) * 7 / 5));margin:0 auto}
+  .pl,.info{font-size:15px}
+  .log{font-size:14px;max-height:340px}
+  h2.sh{font-size:14px}
+  .btn{padding:11px 20px;font-size:15px}
+}
 
 /* ---------- мобильный режим / Telegram Mini App ---------- */
 @media (max-width:640px){
@@ -284,7 +298,7 @@ let cur=0,round=0,busy=false,over=false,sel=-1,hop=-1,dice=[1,1],status='',actio
 let lastAsk={},botCool={},diff='normal',tradeMsg='',draft={j:-1,cash:0},pending=null;
 let gen=0;const STALE={};
 // v2 — поле 7×5 с тремя объектами; сохранёнки со старой геометрией несовместимы
-const BUILD='2026-09-20.1';   // подставляется при выкатке, видно на экране новой партии
+const BUILD='2026-09-20.2';   // подставляется при выкатке, видно на экране новой партии
 const SKEY='kvartaly-eight-v2',PKEY='kvartaly-prefs',PANEKEY='kvartaly-pane';
 let settings={speed:'normal',sound:true,haptic:true,diff:'normal',bots:2};
 try{Object.assign(settings,JSON.parse(localStorage.getItem(PKEY))||{})}catch(e){}
