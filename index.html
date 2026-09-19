@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 <title>Кварталы — восьмёрка против ботов</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -283,6 +284,7 @@ let cur=0,round=0,busy=false,over=false,sel=-1,hop=-1,dice=[1,1],status='',actio
 let lastAsk={},botCool={},diff='normal',tradeMsg='',draft={j:-1,cash:0},pending=null;
 let gen=0;const STALE={};
 // v2 — поле 7×5 с тремя объектами; сохранёнки со старой геометрией несовместимы
+const BUILD='2026-09-20.1';   // подставляется при выкатке, видно на экране новой партии
 const SKEY='kvartaly-eight-v2',PKEY='kvartaly-prefs',PANEKEY='kvartaly-pane';
 let settings={speed:'normal',sound:true,haptic:true,diff:'normal',bots:2};
 try{Object.assign(settings,JSON.parse(localStorage.getItem(PKEY))||{})}catch(e){}
@@ -726,7 +728,8 @@ function showSetup(){
     ${seg('Скорость ботов','speed',[['slow','Медленно'],['normal','Обычно'],['fast','Быстро'],['instant','Мгновенно']])}
     <div class="actions"><button class="btn" id="goStart">Начать игру</button>
     ${s&&!resumable?'<button class="btn ghost" id="goResume">Продолжить сохранённую</button>':''}
-    ${resumable?'<button class="btn ghost" id="goCancel">Вернуться к игре</button>':''}</div>`,resumable);
+    ${resumable?'<button class="btn ghost" id="goCancel">Вернуться к игре</button>':''}</div>
+    <p class="mut" style="font-size:12px;text-align:center;margin-top:2px">Сборка ${BUILD}</p>`,resumable);
   $('card').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const k=b.dataset.k;settings[k]=k==='bots'?+b.dataset.v:b.dataset.v;savePrefs();renderTools();showSetup()});
   $('goStart').onclick=startGame;
   if($('goResume'))$('goResume').onclick=()=>resume(s);
