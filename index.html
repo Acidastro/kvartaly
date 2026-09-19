@@ -11,18 +11,22 @@
 <style>
 :root{
   --bg:#E6EBE3; --board:#F7F8F4; --ink:#1F2A44; --muted:#6B7385; --line:#C9D1C4; --center:#EEF1EA; --hot:#E5484D; --objbg:#E8EEF8;
-  --p0:#2F5DFF; --p1:#D69A00; --p2:#14907F; --p3:#9A3F9A;
-  --g0:#B89F8A; --g1:#7FB3E6; --g2:#8CC084; --g3:#E8C170; --g4:#E58FA0; --g5:#A99BE3;
+  /* игроки — насыщенные цвета, кварталы — приглушённые: иначе на мелкой клетке
+     не отличить полоску группы от метки владельца */
+  --p0:#2F5DFF; --p1:#D96A00; --p2:#0F8C6B; --p3:#8E2FA8;
+  --g0:#B3A08F; --g1:#93B8CE; --g2:#9BBE95; --g3:#D9C48C; --g4:#D3A0A8; --g5:#A9A6C8;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#151A22; --board:#1E2530; --ink:#E7EAF0; --muted:#98A0B0; --line:#343D4B; --center:#192029; --hot:#FF6B6B; --objbg:#232D3C;
-    --p0:#6F8CFF; --p1:#F0B82A; --p2:#35C1AC; --p3:#C774C7;
+    --p0:#6F8CFF; --p1:#FF9A3C; --p2:#25C08A; --p3:#C86BE8;
+    --g0:#A8998C; --g1:#8FAFC4; --g2:#93B48F; --g3:#CBB887; --g4:#C79AA1; --g5:#A09EBE;
   }
 }
 :root[data-theme="dark"]{
   --bg:#151A22; --board:#1E2530; --ink:#E7EAF0; --muted:#98A0B0; --line:#343D4B; --center:#192029; --hot:#FF6B6B; --objbg:#232D3C;
-  --p0:#6F8CFF; --p1:#F0B82A; --p2:#35C1AC; --p3:#C774C7;
+  --p0:#6F8CFF; --p1:#FF9A3C; --p2:#25C08A; --p3:#C86BE8;
+    --g0:#A8998C; --g1:#8FAFC4; --g2:#93B48F; --g3:#CBB887; --g4:#C79AA1; --g5:#A09EBE;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -47,13 +51,24 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .cell.corner .nm{font-weight:600}
 .cell.obj{background:var(--objbg)}
 .cell .band{height:5px;margin:-3px -4px 3px;flex:none}
-.cell .nm{font-weight:500}
+.cell .nm{font-weight:500;padding-right:11px}
 .cell .ico{font-size:1.5em;line-height:1}
-.cell .arr{position:absolute;top:2px;right:4px;color:var(--muted);font-size:1.1em}
 .cell .pr{color:var(--muted);margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:3px}
 .cell.hotc .pr{color:var(--hot);font-weight:600}
 .cell.mort .nm{text-decoration:line-through}
-.cell .own{position:absolute;inset:0;border:3px solid transparent;pointer-events:none}
+/* Владелец — угловой флажок, а не рамка: форма отличает его от полоски квартала,
+   поэтому близкие оттенки игрока и группы больше не путаются. */
+.cell .own{position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 14px 14px 0;
+  border-color:transparent var(--oc) transparent transparent;pointer-events:none;filter:drop-shadow(-1px 1px 1px rgba(0,0,0,.35))}
+@media (max-width:640px){.cell .own{border-width:0 12px 12px 0}}
+/* риск показываем полоской снизу, а не заливкой всей клетки — доска остаётся спокойной */
+.cell .risk{position:absolute;left:0;right:0;bottom:0;background:var(--hot);opacity:.9;border-radius:2px 2px 0 0}
+/* центральный столбец проходится дважды за круг — подчёркиваем это направляющей */
+.cell.mid::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;pointer-events:none;
+  background:linear-gradient(to bottom,transparent,var(--line) 15%,var(--line) 85%,transparent);opacity:.75}
+.cell.mid .nm,.cell.mid .pr{position:relative;z-index:1}
+/* углы — узлы поля, им нужен свой знак */
+.cell.corner .sign{position:absolute;right:3px;top:50%;transform:translateY(-50%);font-size:2.1em;line-height:1;opacity:.16;pointer-events:none}
 /* уровни идут в строке с ценой, а не поверх названия — иначе на узком экране они наезжают на текст */
 .cell .lv{display:flex;gap:2px;flex:none;align-items:center}
 .cell .lv i{width:5px;height:5px;border-radius:50%;background:var(--ink)}
@@ -62,16 +77,20 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .cell .lv.max b{display:block;width:10px;height:10px;border-radius:2px;transform:rotate(45deg);
   background:linear-gradient(135deg,#FFE28F,#E0A100);box-shadow:0 0 6px rgba(240,184,42,.8)}
 @media (max-width:640px){.cell .lv.max b{width:8px;height:8px}}
-.cell.royal::after{content:'';position:absolute;inset:3px;border:1px solid rgba(240,184,42,.55);border-radius:2px;pointer-events:none}
+.cell .rf{position:absolute;inset:3px;border:1px solid rgba(240,184,42,.55);border-radius:2px;pointer-events:none}
 .cell.royal .nm{color:#F0B82A}
 .cell.sel{box-shadow:inset 0 0 0 2px var(--ink)}
 .dirb{position:absolute;left:3px;bottom:2px;font-size:1.35em;line-height:1;font-weight:700}
 .tokens{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-top:2px;min-height:0}
-.tok{width:clamp(9px,1.4vw,13px);height:clamp(9px,1.4vw,13px);border-radius:50%;border:2px solid var(--board)}
+/* фишки читаются на любой клетке: светлая обводка + тень отделяют их от фона и рамок */
+.tok{width:clamp(10px,1.5vw,14px);height:clamp(10px,1.5vw,14px);border-radius:50%;
+  border:2px solid rgba(255,255,255,.92);box-shadow:0 1px 3px rgba(0,0,0,.55)}
 .tok.hop{animation:hop .14s ease-out}
 .tk{display:flex;align-items:center;gap:1px}
-.tarr{font-size:clamp(9px,1.35vw,14px);line-height:1;font-weight:700}
-.tok.me{width:clamp(13px,2.1vw,19px);height:clamp(13px,2.1vw,19px);box-shadow:0 0 0 2px var(--board),0 0 0 4px currentColor}
+.tarr{font-size:clamp(9px,1.35vw,14px);line-height:1;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+/* своя фишка — крупнее и с двойным кольцом своего цвета */
+.tok.me{width:clamp(14px,2.2vw,20px);height:clamp(14px,2.2vw,20px);
+  box-shadow:0 0 0 2px var(--board),0 0 0 4px currentColor,0 1px 4px rgba(0,0,0,.6)}
 .cell.here{box-shadow:inset 0 0 0 3px var(--p0)}
 .cell.here.sel{box-shadow:inset 0 0 0 3px var(--p0),inset 0 0 0 5px var(--ink)}
 .pulse{position:absolute;border-radius:50%;pointer-events:none;border:2px solid var(--p0);animation:pulse 1.6s ease-out infinite;width:clamp(13px,2.1vw,19px);height:clamp(13px,2.1vw,19px)}
@@ -118,8 +137,14 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .info p{margin:0}
 .fld{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
 .fld select,.fld input{background:var(--center);border:2px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--ink)}
-.log{font-size:13px;color:var(--muted);max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:4px}
-.log div:first-child{color:var(--ink)}
+.log{font-size:13px;color:var(--muted);max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:5px}
+.log .le{display:flex;gap:7px;align-items:flex-start;line-height:1.3}
+.log .le i{width:7px;height:7px;border-radius:50%;flex:none;margin-top:5px}
+.log .le i.noone{background:var(--line)}
+.log .le:first-child span{color:var(--ink)}
+.log .le.loss span{color:var(--hot)}
+.log .le.gain span{color:var(--p2)}
+.mysum{font-size:clamp(9px,2.4vw,12px);color:var(--muted);line-height:1.25;max-width:14ch}
 h2.sh{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 4px}
 
 .overlay{position:fixed;inset:0;background:rgba(15,20,30,.55);display:grid;place-items:center;padding:16px;z-index:10}
@@ -308,6 +333,7 @@ const savePrefs=()=>{
 /* ---------- правила ---------- */
 const $=id=>document.getElementById(id);
 const r10=x=>Math.round(x/10)*10;
+const plural=(n,one,few,many)=>{const m=n%100,k=n%10;return m>=11&&m<=14?many:k===1?one:k>=2&&k<=4?few:many};
 const cellAt=pos=>PATH[pos];
 const inGroup=g=>PROPS.filter(i=>CELLS[i].g===g);
 const gsize=g=>inGroup(g).length;
@@ -384,6 +410,10 @@ function setSel(i){
   sel=i;
 }
 const label=i=>CELLS[i].name;
+/* Названия клеток женского рода нужно склонять: «улучшает Рощу», а не «улучшает Роща».
+   Мужской род (Мост, Банк, Торг…) остаётся без изменений. */
+const acc=i=>{const n=CELLS[i].name;return n.endsWith('а')?n.slice(0,-1)+'у':n.endsWith('я')?n.slice(0,-1)+'ю':n};
+const prep=i=>{const n=CELLS[i].name;return n.endsWith('а')||n.endsWith('я')?n.slice(0,-1)+'е':n};
 function routeArrow(pos){
   const a=stepArrow(pos);
   if(!CELLS[cellAt(pos)].center)return a;
@@ -430,7 +460,7 @@ const CHANCE=[
   {t:'шаг назад на 3 клетки',fn:async p=>{await move(p,-3);await land(p)}},
   {t:'прогулка до Замка',fn:async p=>{await move(p,(CASTLE-p.pos+N)%N);await land(p)}},
   {t:'бесплатное улучшение',fn:async p=>{const o=owned(p.id).filter(i=>canUpgrade(p.id,i));
-    if(o.length){const i=o[Math.random()*o.length|0];level[i]++;log(`${p.name} бесплатно улучшает ${label(i)}`)}
+    if(o.length){const i=o[Math.random()*o.length|0];level[i]++;log(`${p.name} бесплатно улучшает ${acc(i)}`)}
     else{p.money+=50;log(`${p.name}: улучшать нечего, вместо этого +50`)}}},
   {t:'соседи платят по 10 за каждую вашу улицу',fn:async p=>{const n=10*PROPS.filter(i=>owner[i]===p.id).length;others(p).forEach(o=>{o.money-=n;p.money+=n})}},
 ];
@@ -472,16 +502,18 @@ function renderCells(){
     if(c.type==='prop'){
       h+=`<div class="band" style="background:${GROUP[c.g]}"></div><div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:mort[i]?'в залоге':(o>0&&heat[i]?'−':'')+rentOf(i)}</span>${lv}</div>`;
     } else if(c.type==='obj'){
-      h+=`<span class="arr">↓</span><div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:(o>0&&heat[i]?'−':'')+(mob?'':'сбор ')+rentOf(i)}</span>${lv}</div>`;
+      h+=`<div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:(o>0&&heat[i]?'−':'')+(mob?'':'сбор ')+rentOf(i)}</span>${lv}</div>`;
     } else {
       const sub={start:'+200',chance:'',jail:`выкуп ${BAIL}`,gojail:'до 3 ходов',tax:`${c.amount}`}[c.type]||'';
-      h+=`<div class="nm">${c.name}</div><div class="pr"><span>${sub}</span></div>`;
+      const sign={start:'▶',jail:'▦',gojail:'⇥',tax:'⊖',chance:'?'}[c.type]||'';
+      h+=`${sign?`<span class="sign">${sign}</span>`:''}<div class="nm">${c.name}</div><div class="pr"><span>${sub}</span></div>`;
     }
-    if(o>=0)h+=`<div class="own" style="border-color:${COLORS[o]}"></div>`;
+    if(o>=0)h+=`<div class="own" style="--oc:${COLORS[o]}"></div>`;
+    if(royal)h+='<div class="rf"></div>';
+    if(heat[i])h+=`<div class="risk" style="height:${(1.5+heat[i]*7).toFixed(1)}px"></div>`;
     h+=`<div class="tokens">${players.filter(p=>p.alive&&cellAt(p.pos)===i).map(p=>`<span class="tk"><span class="tok ${p.id===0?'me':''} ${hop===p.id?'hop':''}" style="background:${COLORS[p.id]};color:${COLORS[p.id]}">${p.id===0&&!busy?'<span class="pulse"></span>':''}</span><span class="tarr" style="color:${COLORS[p.id]}">${p.jail?'⏸':routeArrow(p.pos)}</span></span>`).join('')}</div>`;
     el.innerHTML=h;
-    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
-    el.style.background=heat[i]?`color-mix(in srgb, var(--hot) ${Math.round(10+heat[i]*170)}%, ${c.type==='obj'?'var(--objbg)':'var(--board)'})`:'';
+    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('mid',!!c.center);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
     el.setAttribute('aria-label',c.name+(heat[i]?', опасная клетка':''));
   });
 }
@@ -595,15 +627,35 @@ function renderCenter(){
     $('cStats').onclick=showEnd;$('cNew').onclick=showSetup;return;
   }
   const txt=you(status);
-  // на узком экране центр восьмёрки слишком мал для текста: там баланс, статус — отдельной строкой под доской
+  // на узком экране центр восьмёрки слишком мал для текста: там сводка по себе, статус — под доской
+  const me=players[0];
+  const full=GROUPS.filter(g=>hasGroup(0,g)).length;
+  const obj=myObj(0);
+  const summary=`<div class="mysum">${streetsOf(0)} ${plural(streetsOf(0),'улица','улицы','улиц')}`
+    +(full?` · ${full} ${plural(full,'квартал','квартала','кварталов')}`:'')
+    +(obj>=0?` · ${CELLS[obj].name}`:'')+`</div>`;
   R.innerHTML=isMobile()
-    ?`<div class="small-note mut">Ваш капитал</div><div class="money-big">${players[0].money}</div>`
+    ?`<div class="small-note mut">Ваш капитал</div><div class="money-big">${me.money}</div>${me.alive?summary:''}`
     :`<div class="status">${txt}</div>`;
   sb.innerHTML=txt;
   bar.innerHTML='';
   setMainButton(actions).forEach(([lbl,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=lbl;b.disabled=!!dis;b.onclick=fn;bar.appendChild(b)});
 }
-function renderLog(){$('log').innerHTML=logs.map(m=>`<div>${m}</div>`).join('')}
+/* Лог читается по диагонали: точка игрока слева, а цветом отмечаем только СВОИ деньги —
+   расчёты между ботами остаются нейтральными, иначе пестрит и смысл теряется. */
+const LOG_MY_LOSS=/(платите|заплатили|гасите|закладываете|продали улучшение|выкупаете|разорились|банкрот)/i;
+const LOG_MY_GAIN=/(получаете|покупаете|купили|выигрываете|улучшили|довели|выкупили|проходите Старт)/i;
+function logClass(m){
+  if(/^Вы[ ,]/.test(m))return LOG_MY_LOSS.test(m)?'loss':LOG_MY_GAIN.test(m)?'gain':'';
+  return /\bвам\b/i.test(m)?'gain':'';
+}
+function renderLog(){
+  $('log').innerHTML=logs.map(m=>{
+    const pid=NAMES.findIndex(n=>m.startsWith(n));
+    const dot=pid>=0?`<i style="background:${COLORS[pid]}"></i>`:'<i class="noone"></i>';
+    return `<div class="le ${logClass(m)}">${dot}<span>${m}</span></div>`;
+  }).join('');
+}
 function renderTools(){
   $('speedSel').value=settings.speed;
   $('sndBtn').textContent=settings.sound?'Звук: вкл':'Звук: выкл';
@@ -752,10 +804,10 @@ function ownAction(a,i){
   if(!idle()||owner[i]!==0)return;
   const me=players[0];
   if(a==='up'&&canUpgrade(0,i)&&me.money>=upCost(i)){me.money-=upCost(i);level[i]++;
-    log(level[i]===maxLv(i)?`Вы довели ${label(i)} до королевского уровня`:`Вы улучшили ${label(i)} до уровня ${level[i]+(CELLS[i].type==='obj'?1:0)}`);sfx.buy()}
-  if(a==='sell'&&level[i]&&CELLS[i].type==='prop'){level[i]--;me.money+=Math.round(upCost(i)/2);log(`Вы продали улучшение на ${label(i)}`)}
-  if(a==='mort'&&CELLS[i].type==='prop'&&!mort[i]&&groupClean(i)){mort[i]=true;me.money+=mortVal(i);log(`Вы заложили ${label(i)}`)}
-  if(a==='unmort'&&mort[i]&&me.money>=unmortCost(i)){mort[i]=false;me.money-=unmortCost(i);log(`Вы выкупили ${label(i)} из залога`)}
+    log(level[i]===maxLv(i)?`Вы довели ${acc(i)} до королевского уровня`:`Вы улучшили ${label(i)} до уровня ${level[i]+(CELLS[i].type==='obj'?1:0)}`);sfx.buy()}
+  if(a==='sell'&&level[i]&&CELLS[i].type==='prop'){level[i]--;me.money+=Math.round(upCost(i)/2);log(`Вы продали улучшение на ${prep(i)}`)}
+  if(a==='mort'&&CELLS[i].type==='prop'&&!mort[i]&&groupClean(i)){mort[i]=true;me.money+=mortVal(i);log(`Вы заложили ${acc(i)}`)}
+  if(a==='unmort'&&mort[i]&&me.money>=unmortCost(i)){mort[i]=false;me.money-=unmortCost(i);log(`Вы выкупили ${acc(i)} из залога`)}
   humanIdle();
 }
 function payRent(p,i){
@@ -771,13 +823,13 @@ function settle(p){
   while(p.money<0){
     const mine=owned(p.id);
     const upS=mine.filter(i=>CELLS[i].type==='prop'&&level[i]>0).sort((a,b)=>level[b]-level[a]);
-    if(upS.length){const i=upS[0];p.money+=Math.round(upCost(i)/2);level[i]--;log(`${p.name} продаёт улучшение на ${label(i)}`);continue}
+    if(upS.length){const i=upS[0];p.money+=Math.round(upCost(i)/2);level[i]--;log(`${p.name} продаёт улучшение на ${prep(i)}`);continue}
     const upO=mine.filter(i=>CELLS[i].type==='obj'&&level[i]>0);
     if(upO.length){const i=upO[0];p.money+=Math.round(upCost(i)/2);level[i]--;log(`${p.name} понижает уровень: ${label(i)}`);continue}
     const m=mine.filter(i=>CELLS[i].type==='prop'&&!mort[i]).sort((a,b)=>CELLS[a].price-CELLS[b].price);
-    if(m.length){const i=m[0];mort[i]=true;p.money+=mortVal(i);log(`${p.name} закладывает ${label(i)}`);continue}
+    if(m.length){const i=m[0];mort[i]=true;p.money+=mortVal(i);log(`${p.name} закладывает ${acc(i)}`);continue}
     const ob=mine.filter(i=>CELLS[i].type==='obj');
-    if(ob.length){const i=ob[0];owner[i]=-1;p.money+=mortVal(i);log(`${p.name} продаёт банку ${label(i)}`);continue}
+    if(ob.length){const i=ob[0];owner[i]=-1;p.money+=mortVal(i);log(`${p.name} продаёт банку ${acc(i)}`);continue}
     break;
   }
   if(p.money<0){
@@ -1049,7 +1101,7 @@ async function botBotTrade(p){
       const price=r10(giveValue(q,i,p.id));
       if(p.money-price<p.risk+80)continue;
       p.money-=price;q.money+=price;owner[i]=p.id;
-      status=`${q.name} продаёт ${p.name} ${label(i)} за ${price}`;log(status);sfx.buy();render();await wait(1000);return;
+      status=`${q.name} продаёт ${p.name} ${acc(i)} за ${price}`;log(status);sfx.buy();render();await wait(1000);return;
     }
   }
   for(const i of PROPS){
@@ -1068,7 +1120,7 @@ async function botBotTrade(p){
       const price=r10(giveValue(q,i,p.id));
       if(p.money-price<p.risk*.5){log(`${p.name} хотел купить ${c.name} у ${q.name}, но не хватило денег`);continue}
       p.money-=price;q.money+=price;owner[i]=p.id;
-      status=`${q.name} продаёт ${p.name} ${c.name} за ${price}`;
+      status=`${q.name} продаёт ${p.name} ${acc(i)} за ${price}`;
     }
     log(status);sfx.buy();render();await wait(1000);return;
   }
@@ -1077,7 +1129,7 @@ function botUseCards(p){
   const take=k=>{const i=p.cards.indexOf(k);if(i<0)return false;p.cards.splice(i,1);log(`${p.name} применяет карточку «${CARDS[k].n}»`);return true};
   if(p.cards.includes('repair')){
     const opts=owned(p.id).filter(i=>canUpgrade(p.id,i));
-    if(opts.length&&take('repair')){const i=opts[0];level[i]++;log(`${p.name} бесплатно улучшает ${label(i)}`)}
+    if(opts.length&&take('repair')){const i=opts[0];level[i]++;log(`${p.name} бесплатно улучшает ${acc(i)}`)}
   }
   if(p.cards.includes('boost')&&PROPS.filter(i=>owner[i]===p.id).length>=3&&Math.random()<.6&&take('boost'))p.boost=true;
   if(p.cards.includes('shield')&&p.money<300&&take('shield'))p.shield=true;
@@ -1089,17 +1141,17 @@ function botManage(p){
   while(did){
     did=false;
     for(const i of PROPS.filter(i=>owner[i]===p.id&&mort[i]).sort((a,b)=>CELLS[b].price-CELLS[a].price)){
-      if(p.money-unmortCost(i)>=p.risk+150){p.money-=unmortCost(i);mort[i]=false;log(`${p.name} выкупает ${CELLS[i].name} из залога`);did=true;break}
+      if(p.money-unmortCost(i)>=p.risk+150){p.money-=unmortCost(i);mort[i]=false;log(`${p.name} выкупает ${acc(i)} из залога`);did=true;break}
     }
     if(did)continue;
     if(D()<0&&Math.random()<.5)break;
     const reserve=D()>0?p.risk+60:p.risk+100;
     for(const i of PROPS.filter(i=>canUpgrade(p.id,i)).sort((a,b)=>level[a]-level[b])){
-      if(p.money-upCost(i)>=reserve){p.money-=upCost(i);level[i]++;log(`${p.name} улучшает ${CELLS[i].name}`);did=true;break}
+      if(p.money-upCost(i)>=reserve){p.money-=upCost(i);level[i]++;log(`${p.name} улучшает ${acc(i)}`);did=true;break}
     }
     if(did)continue;
     for(const i of OBJS.filter(i=>canUpgrade(p.id,i)).sort((a,b)=>level[a]-level[b])){
-      if(p.money-upCost(i)>=reserve+80){p.money-=upCost(i);level[i]++;log(`${p.name} улучшает ${label(i)} до уровня ${level[i]+1}`);did=true;break}
+      if(p.money-upCost(i)>=reserve+80){p.money-=upCost(i);level[i]++;log(`${p.name} улучшает ${acc(i)} до уровня ${level[i]+1}`);did=true;break}
     }
   }
 }
