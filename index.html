@@ -63,10 +63,6 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 @media (max-width:640px){.cell .own{border-width:0 12px 12px 0}}
 /* риск показываем полоской снизу, а не заливкой всей клетки — доска остаётся спокойной */
 .cell .risk{position:absolute;left:0;right:0;bottom:0;background:var(--hot);opacity:.9;border-radius:2px 2px 0 0}
-/* центральный столбец проходится дважды за круг — подчёркиваем это направляющей */
-.cell.mid::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;pointer-events:none;
-  background:linear-gradient(to bottom,transparent,var(--line) 15%,var(--line) 85%,transparent);opacity:.75}
-.cell.mid .nm,.cell.mid .pr{position:relative;z-index:1}
 /* углы — узлы поля, им нужен свой знак */
 .cell.corner .sign{position:absolute;right:3px;top:50%;transform:translateY(-50%);font-size:2.1em;line-height:1;opacity:.16;pointer-events:none}
 /* уровни идут в строке с ценой, а не поверх названия — иначе на узком экране они наезжают на текст */
@@ -524,7 +520,7 @@ function renderCells(){
     if(heat[i])h+=`<div class="risk" style="height:${(1.5+heat[i]*7).toFixed(1)}px"></div>`;
     h+=`<div class="tokens">${players.filter(p=>p.alive&&cellAt(p.pos)===i).map(p=>`<span class="tk"><span class="tok ${p.id===0?'me':''} ${hop===p.id?'hop':''}" style="background:${COLORS[p.id]};color:${COLORS[p.id]}">${p.id===0&&!busy?'<span class="pulse"></span>':''}</span><span class="tarr" style="color:${COLORS[p.id]}">${p.jail?'⏸':routeArrow(p.pos)}</span></span>`).join('')}</div>`;
     el.innerHTML=h;
-    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('mid',!!c.center);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
+    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
     el.setAttribute('aria-label',c.name+(heat[i]?', опасная клетка':''));
   });
 }
