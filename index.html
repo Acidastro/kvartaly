@@ -58,9 +58,9 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .cell.mort .nm{text-decoration:line-through}
 /* Владелец — угловой флажок, а не рамка: форма отличает его от полоски квартала,
    поэтому близкие оттенки игрока и группы больше не путаются. */
-.cell .own{position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 14px 14px 0;
+.cell .own{position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 18px 18px 0;
   border-color:transparent var(--oc) transparent transparent;pointer-events:none;filter:drop-shadow(-1px 1px 1px rgba(0,0,0,.35))}
-@media (max-width:640px){.cell .own{border-width:0 12px 12px 0}}
+@media (max-width:640px){.cell .own{border-width:0 13px 13px 0}}
 /* риск показываем полоской снизу, а не заливкой всей клетки — доска остаётся спокойной */
 .cell .risk{position:absolute;left:0;right:0;bottom:0;background:var(--hot);opacity:.9;border-radius:2px 2px 0 0}
 /* углы — узлы поля, им нужен свой знак */
@@ -516,6 +516,9 @@ function renderCells(){
       h+=`${sign?`<span class="sign">${sign}</span>`:''}<div class="nm">${c.name}</div><div class="pr"><span>${sub}</span></div>`;
     }
     if(o>=0)h+=`<div class="own" style="--oc:${COLORS[o]}"></div>`;
+    // вся клетка тонируется цветом владельца — территорию видно, не вглядываясь в угол
+    const base=c.type==='obj'?'var(--objbg)':c.type==='prop'?'var(--board)':'var(--center)';
+    el.style.background=o>=0?`color-mix(in srgb, ${COLORS[o]} ${mort[i]?12:26}%, ${base})`:'';
     if(royal)h+='<div class="rf"></div>';
     if(heat[i])h+=`<div class="risk" style="height:${(1.5+heat[i]*7).toFixed(1)}px"></div>`;
     h+=`<div class="tokens">${players.filter(p=>p.alive&&cellAt(p.pos)===i).map(p=>`<span class="tk"><span class="tok ${p.id===0?'me':''} ${hop===p.id?'hop':''}" style="background:${COLORS[p.id]};color:${COLORS[p.id]}">${p.id===0&&!busy?'<span class="pulse"></span>':''}</span><span class="tarr" style="color:${COLORS[p.id]}">${p.jail?'⏸':routeArrow(p.pos)}</span></span>`).join('')}</div>`;
