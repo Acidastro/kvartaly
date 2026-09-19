@@ -106,6 +106,10 @@ h1,.ot{font-family:Unbounded,Rubik,sans-serif;font-weight:700;letter-spacing:-.0
 .status{font-size:clamp(9px,1.5vw,14px);max-width:34ch;overflow:auto}
 .small-note{font-size:clamp(8px,1.2vw,12px)}
 .bar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:40px;align-items:center}
+/* блок решения: вопрос виден рядом с кнопками, обе кнопки равнозначны, MainButton в этот момент скрыта */
+.bar.decide{display:block;background:var(--board);border:2px solid var(--p0);border-radius:14px;padding:12px 14px;text-align:center}
+.bar.decide .q{font-size:15px;line-height:1.35;margin-bottom:10px}
+.bar.decide .qbtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .actions{display:flex;gap:6px;flex-wrap:wrap}
 .btn{background:var(--ink);color:var(--board);border:0;padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px}
 .btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink)}
@@ -375,9 +379,16 @@ const D=()=>DIFF[diff];
 const others=p=>players.filter(o=>o!==p&&o.alive);
 const idle=()=>!over&&players.length&&cur===0&&!busy;
 async function wait(ms){const g=gen;await new Promise(r=>setTimeout(r,ms*SPEED[settings.speed]));if(g!==gen)throw STALE}
-async function ask(text,btns){
+/* Решения с последствиями (продать, купить, поднять ставку) НИКОГДА не уезжают в MainButton:
+   она под броском кубиков, и рука жмёт её не глядя. Такие вопросы показываем блоком
+   с текстом и равнозначными кнопками — `flow: true` оставляют только продолжения хода. */
+async function ask(text,btns,flow=false){
   const g=gen;status=text;
-  const v=await new Promise(r=>{actions=btns.map(([l,val,gh])=>[l,()=>r(val),gh]);render()});
+  const v=await new Promise(r=>{
+    actions=btns.map(([l,val,gh])=>[l,()=>r(val),gh]);
+    actions.flow=flow;actions.question=text;
+    render();
+  });
   if(g!==gen)throw STALE;actions=[];return v;
 }
 const VERB={платит:'платите',проходит:'проходите',покупает:'покупаете',закладывает:'закладываете',продаёт:'продаёте',
@@ -603,7 +614,7 @@ function setMainButton(list){
   if(!inTG||!TG.MainButton)return list;
   const mb=TG.MainButton;
   if(mbFn){try{mb.offClick(mbFn)}catch(e){}mbFn=null}
-  const main=list.find(a=>!a[3]);
+  const main=list.flow===false?null:list.find(a=>!a[3]);
   if(!main||!$('overlay').hidden){try{mb.hide()}catch(e){}document.body.classList.remove('mb-on');return list}
   mbFn=()=>{hap('medium');main[1]()};
   try{mb.setText(String(main[0]).slice(0,64));mb.onClick(mbFn);mb.enable();mb.show()}catch(e){}
@@ -637,9 +648,13 @@ function renderCenter(){
   R.innerHTML=isMobile()
     ?`<div class="small-note mut">Ваш капитал</div><div class="money-big">${me.money}</div>${me.alive?summary:''}`
     :`<div class="status">${txt}</div>`;
-  sb.innerHTML=txt;
-  bar.innerHTML='';
-  setMainButton(actions).forEach(([lbl,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=lbl;b.disabled=!!dis;b.onclick=fn;bar.appendChild(b)});
+  // вопрос с последствиями показываем рядом с кнопками, а не только в центре доски
+  const decide=actions.flow===false&&actions.length>0;
+  sb.innerHTML=decide?'':txt;
+  bar.className='bar'+(decide?' decide':'');
+  bar.innerHTML=decide?`<div class="q">${you(actions.question||'')}</div><div class="qbtns"></div>`:'';
+  const host=decide?bar.querySelector('.qbtns'):bar;
+  setMainButton(actions).forEach(([lbl,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=lbl;b.disabled=!!dis;b.onclick=fn;host.appendChild(b)});
 }
 /* Лог читается по диагонали: точка игрока слева, а цветом отмечаем только СВОИ деньги —
    расчёты между ботами остаются нейтральными, иначе пестрит и смысл теряется. */
@@ -878,7 +893,7 @@ async function jailTurn(p){
     const btns=[['Бросить на дубль','roll']];
     if(p.money>=BAIL)btns.push([`Заплатить ${BAIL} и выйти`,'pay',true]);
     if(hasCard)btns.push(['Карточка «Освобождение»','card',true]);
-    choice=await ask(`Вы в тюрьме. Попыток выбросить дубль: ${p.jail}. Выкуп стоит ${BAIL}. На третьей неудаче выкуп спишется сам.`,btns);
+    choice=await ask(`Вы в тюрьме. Попыток выбросить дубль: ${p.jail}. Выкуп стоит ${BAIL}. На третьей неудаче выкуп спишется сам.`,btns,true);
   }
   if(choice==='card'){p.cards.splice(p.cards.indexOf('free'),1);p.jail=0;status=`${p.name} выходит из тюрьмы по карточке`;log(status);sfx.buy();render();await wait(500);return true}
   if(choice==='pay'){p.money-=BAIL;p.jail=0;status=`${p.name} платит выкуп ${BAIL} и выходит`;log(status);sfx.pay();render();await wait(500);return true}
@@ -914,7 +929,7 @@ async function turn(){
       if(p.extra>0&&!p.jail){p.extra--;status=`${p.name}: карточка «Лишний бросок»`;log(status);render();await wait(600);dbl=0;continue}
       if(!isD||p.jail)break;
       if(p.bot){status=`${p.name}: дубль, бросает ещё раз`;render();await wait(700)}
-      else await ask('Дубль! Бросайте ещё раз.',[['Бросить ещё раз',1]]);
+      else await ask('Дубль! Бросайте ещё раз.',[['Бросить ещё раз',1]],true);
     }
     if(p.alive&&p.bot&&!gameEnded()){botUseCards(p);await botOffer(p);await botBotTrade(p);botManage(p);render()}
     await wait(p.bot?600:300);
@@ -947,7 +962,7 @@ async function land(p){
         setSel(i);
         const pr=buyPrice(p.id,c.price),disc=pr<c.price?` (Банк: вместо ${c.price})`:'';
         const txt=c.type==='obj'?`${label(i)} свободен. Купить за ${pr}${disc}? Даёт: ${c.desc(0)}. Если откажетесь, объект уйдёт на аукцион.`:`${c.name} свободна. Купить за ${pr}${disc}? Если откажетесь, улица уйдёт на аукцион.`;
-        buy=await ask(txt,[['Купить',true],['На аукцион',false,true]]);
+        buy=await ask(txt,[['Купить за '+pr,true],['На аукцион',false]]);
       }
       if(buy){let cost=buyPrice(p.id,c.price);if(p.discount){p.discount=false;const ci=p.cards.indexOf('discount');if(ci>=0)p.cards.splice(ci,1);cost=Math.round(cost*.7);log(`${p.name} применяет карточку «Скидка»`)}p.money-=cost;owner[i]=p.id;p.st.bought++;status=`${p.name} покупает ${label(i)} за ${cost}`;log(status);sfx.buy();render();await wait(500)}
       else await auction(i,p);
@@ -1064,7 +1079,7 @@ async function botOffer(p){
       const a=r10(CELLS[i].price*(1.6+.05*streetsOf(p.id))+level[i]*upVal(i)*1.2);
       if(p.money-a<p.risk+100)continue;
       botCool[key]=round;setSel(i);
-      const yes=await ask(`${p.name} хочет купить у вас ${label(i)}${level[i]?` с улучшениями`:''} за ${a}.`,[['Продать',true],['Отказать',false,true]]);
+      const yes=await ask(`${p.name} хочет купить у вас ${acc(i)}${level[i]?` с улучшениями`:''} за ${a}.`,[['Продать за '+a,true],['Оставить себе',false]]);
       if(yes){owner[i]=p.id;p.money-=a;players[0].money+=a;log(`Вы продали ${label(i)} боту ${p.name} за ${a}`);sfx.buy()}
       else log(`Вы отказали ${p.name} в продаже ${label(i)}`);
       render();return;
@@ -1084,7 +1099,7 @@ async function botOffer(p){
       text=`${p.name} хочет купить у вас ${CELLS[i].name}${level[i]?' с улучшениями':''} за ${a}. Это соберёт ему квартал.`;deal={k:-1,cash:a};
     }
     botCool[i]=round;setSel(i);
-    const yes=await ask(text,[['Согласиться',true],['Отказать',false,true]]);
+    const yes=await ask(text,[['Согласиться',true],['Отказать',false]]);
     if(yes){owner[i]=p.id;if(deal.k>=0)owner[deal.k]=0;p.money-=deal.cash;players[0].money+=deal.cash;log(`Сделка с ${p.name}: ${CELLS[i].name} уходит боту`);sfx.buy()}
     else log(`Вы отказали ${p.name} в сделке`);
     render();return;
