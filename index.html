@@ -297,8 +297,20 @@ let players=[],owner=[],level=[],mort=[],cellRent=[],maxHit=null,logs=[];
 let cur=0,round=0,busy=false,over=false,sel=-1,hop=-1,dice=[1,1],status='',actions=[];
 let lastAsk={},botCool={},diff='normal',tradeMsg='',draft={j:-1,cash:0},pending=null;
 let gen=0;const STALE={};
+/* Мультиплеер: место игрока за столом. В одиночной игре моё место — нулевое.
+   ВАЖНО: mySeat запрещено использовать в правилах и в логике ботов — у разных клиентов
+   он разный, а расчёт обязан совпадать. Только отрисовка и мои собственные кнопки. */
+let mySeat=0,MP=false;
+const isMe=pid=>pid===mySeat;
+// состояние комнаты; absent — места, чьи хозяева сейчас не на связи (их ходы можно двигать за них)
+let mp={ws:null,code:'',members:[],host:'',you:'',bots:1,diff:'normal',absent:new Set(),tries:0,want:'',pending:null};
+/* Детерминированный ГПСЧ (mulberry32): одна последовательность у всех клиентов,
+   поэтому решения ботов и «Шанс» совпадают без пересылки по сети. Кубики — с сервера. */
+let rndS=1;
+function rnd(){rndS=rndS+0x6D2B79F5|0;let t=Math.imul(rndS^rndS>>>15,1|rndS);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}
+const pick=a=>a[rnd()*a.length|0];
 // v2 — поле 7×5 с тремя объектами; сохранёнки со старой геометрией несовместимы
-const BUILD='2026-09-20.2';   // подставляется при выкатке, видно на экране новой партии
+const BUILD='2026-09-21.1';   // подставляется при выкатке, видно на экране новой партии
 const SKEY='kvartaly-eight-v2',PKEY='kvartaly-prefs',PANEKEY='kvartaly-pane';
 let settings={speed:'normal',sound:true,haptic:true,diff:'normal',bots:2};
 try{Object.assign(settings,JSON.parse(localStorage.getItem(PKEY))||{})}catch(e){}
@@ -389,27 +401,124 @@ const owned=pid=>CELLS.map((_,i)=>i).filter(i=>owner[i]===pid);
 const worth=p=>p.money+owned(p.id).reduce((s,i)=>s+(mort[i]?mortVal(i):CELLS[i].price+level[i]*upCost(i)),0);
 const D=()=>DIFF[diff];
 const others=p=>players.filter(o=>o!==p&&o.alive);
-const idle=()=>!over&&players.length&&cur===0&&!busy;
-async function wait(ms){const g=gen;await new Promise(r=>setTimeout(r,ms*SPEED[settings.speed]));if(g!==gen)throw STALE}
+// действия с улицами доступны ровно пока идёт моя фаза до броска — это же и есть idleCtx
+const idle=()=>!!idleCtx;
+async function wait(ms){const g=gen;if(!replaying)await new Promise(r=>setTimeout(r,ms*SPEED[settings.speed]));if(g!==gen)throw STALE}
+
+/* ---------- поток событий ---------- */
+/* Партия — это последовательность событий двух видов: бросок кубиков и решение игрока.
+   Всё остальное (ходы ботов, «Шанс», любые расчёты) выводится из них детерминированно,
+   поэтому по сети едут только они. Одиночная игра идёт через тот же слой с локальным
+   транспортом: код один на оба режима и не может разъехаться. */
+let evLog=[],evPend=null,replaying=false;
+/* evCur — на каком шаге партии находится ЭТОТ клиент. Брать номер из evLog.length нельзя:
+   журнал приходит от сервера и легко убегает вперёд, пока мы доигрываем предыдущее
+   событие, — тогда клиент перепрыгнул бы через шаг и разошёлся с остальными. */
+let evCur=0;
+const net={mode:'local',send:null};
+function evReset(){if(evPend){evPend.reject(STALE);evPend=null}evLog=[];evCur=0;desync=false}
+/* Отпечаток позиции. Отправитель кладёт его в событие, остальные сверяют со своим —
+   так расхождение в правилах видно сразу, а не через двадцать ходов кривой партии. */
+function stateHash(){
+  let h=7;
+  const add=s=>{const t=String(s);for(let i=0;i<t.length;i++)h=(Math.imul(h,31)+t.charCodeAt(i))|0};
+  add(cur);add(round);add(rndS);
+  players.forEach(p=>{add(p.pos);add(p.money);add(p.jail);add(p.alive?1:0);add(p.cards.join('.'));add(p.extra)});
+  owner.forEach(add);level.forEach(add);mort.forEach(m=>add(m?1:0));
+  return h>>>0;
+}
+let desync=false;
+function evApply(ev){
+  if(ev.seq!==evLog.length)return;   // порядок держит сервер; всё, что не следующим номером, — мусор
+  evLog[ev.seq]=ev;
+  if(evPend&&evPend.seq===ev.seq){const w=evPend;evPend=null;w.resolve(ev)}
+}
+function onDesync(seq,mine,theirs){
+  desync=true;
+  console.warn('kvartaly: расхождение на шаге',seq,'у меня',mine,'у отправителя',theirs);
+  log('Внимание: состояние разошлось с соперником. Партию лучше начать заново.');
+}
+function evEmit(ev){
+  if(evLog[ev.seq])return;           // на этот шаг событие уже есть — второй раз не шлём
+  if(net.mode==='local'){
+    if(ev.kind==='dice')ev.v=[1+rnd()*6|0,1+rnd()*6|0];
+    evApply(ev);
+  } else net.send({...ev,h:stateHash()});
+}
+/* Отпечаток считаем ровно здесь — в точке, где корутина дошла до шага seq. Сверять его
+   в момент прихода сообщения нельзя: пакет может прилететь, пока мы ещё доигрываем
+   предыдущий ход, и разойдётся не состояние, а момент замера. */
+function evGet(seq){
+  const g=gen;
+  evCur=seq+1;
+  const mine=MP&&!replaying&&!desync?stateHash():0;
+  const chk=ev=>{
+    if(mine&&typeof ev.h==='number'&&ev.h!==mine&&!desync)onDesync(seq,mine,ev.h);
+    return ev;
+  };
+  if(evLog[seq])return Promise.resolve(chk(evLog[seq]));
+  // журнал догнан — перемотка закончилась, возвращаемся к нормальной отрисовке
+  if(replaying){replaying=false;render()}
+  return new Promise((resolve,reject)=>{evPend={seq,resolve,reject}})
+    .then(ev=>{if(g!==gen)throw STALE;return chk(ev)});
+}
+/* Ушедший игрок не должен вешать стол: по таймауту любой клиент подставляет вариант
+   по умолчанию. Значение одно и то же у всех, сервер засчитает первого. Если сервер
+   уже сказал, что человека нет на связи, ждать полный таймаут незачем. */
+const TIMEOUT=75000,TIMEOUT_ABSENT=1500;
+function evStall(seq,seat,fallback){
+  if(net.mode==='local')return evGet(seq);
+  /* Срок пересчитываем на каждом тике, а не один раз на входе: игрок может уйти уже
+     после того, как мы начали его ждать, — тогда ждать полный таймаут незачем. */
+  const t0=Date.now();
+  const iv=setInterval(()=>{
+    if(evLog[seq])return;
+    if(Date.now()-t0>=(mp.absent.has(seat)?TIMEOUT_ABSENT:TIMEOUT))fallback();
+  },500);
+  return evGet(seq).finally(()=>clearInterval(iv));
+}
+// кубики просит хозяин места; за бота и за отсутствующего — любой клиент, сервер примет первого
+const canDrive=seat=>net.mode==='local'||players[seat].bot||seat===mySeat||mp.absent.has(seat);
+async function evDice(seat){
+  const seq=evCur;
+  if(canDrive(seat))evEmit({kind:'dice',seat,seq});
+  return (await evStall(seq,seat,()=>evEmit({kind:'dice',seat,seq}))).v;
+}
 /* Решения с последствиями (продать, купить, поднять ставку) НИКОГДА не уезжают в MainButton:
    она под броском кубиков, и рука жмёт её не глядя. Такие вопросы показываем блоком
-   с текстом и равнозначными кнопками — `flow: true` оставляют только продолжения хода. */
-async function ask(text,btns,flow=false){
-  const g=gen;status=text;
-  const v=await new Promise(r=>{
-    actions=btns.map(([l,val,gh])=>[l,()=>r(val),gh]);
+   с текстом и равнозначными кнопками — `flow: true` оставляют только продолжения хода.
+   Последняя кнопка списка обязана быть отказом: именно она подставится по таймауту. */
+async function evAsk(seat,text,btns,flow=false){
+  const seq=evCur;
+  const def=btns[btns.length-1][1];
+  if(seat===mySeat){
+    status=text;
+    actions=btns.map(([l,val,gh])=>[l,()=>evEmit({kind:'act',seat,seq,v:val}),gh]);
     actions.flow=flow;actions.question=text;
-    render();
-  });
-  if(g!==gen)throw STALE;actions=[];return v;
+  } else {
+    status=`${players[seat].name} решает: ${text}`;actions=[];
+    // за того, кого нет на связи, отказ подставляем сразу — стол не должен ждать пустое место
+    if(mp.absent.has(seat))evEmit({kind:'act',seat,seq,v:def});
+  }
+  render();
+  const ev=await evStall(seq,seat,()=>evEmit({kind:'act',seat,seq,v:def}));
+  actions=[];
+  return ev.v;
 }
 const VERB={платит:'платите',проходит:'проходите',покупает:'покупаете',закладывает:'закладываете',продаёт:'продаёте',
   выигрывает:'выигрываете',пасует:'пасуете',бросает:'бросаете',пропускает:'пропускаете',отправляется:'отправляетесь',
   улучшает:'улучшаете',получает:'получаете',применяет:'применяете',удваивает:'удваиваете',гасит:'гасите',понижает:'понижаете',
   выбрасывает:'выбрасываете',выходит:'выходите',остаётся:'остаётесь',отсидел:'отсидели',выбросил:'выбросили',
-  заплатил:'заплатили',выкупает:'выкупаете',хотел:'хотели',продал:'продали',купил:'купили'};
+  заплатил:'заплатили',выкупает:'выкупаете',хотел:'хотели',продал:'продали',купил:'купили',
+  доводит:'доводите',отказал:'отказали',отказался:'отказались'};
 const CASES={'Сова':['Сове','Совой','Совы'],'Ёж':['Ежу','Ежом','Ежа'],'Кот':['Коту','Котом','Кота']};
-const NAMES_RE='Сова|Ёж|Кот';
+/* Склонять умеем только имена ботов. За столом с живыми игроками их имена приходят
+   из Telegram — такие оставляем как есть, поэтому список для регекспа собираем по столу. */
+let NAMES_RE='Сова|Ёж|Кот';
+function buildNameRe(){
+  const ns=players.filter(p=>CASES[p.name]).map(p=>p.name);
+  NAMES_RE=ns.length?ns.join('|'):'\\u0000';
+}
 function you(t){
   let s=String(t);
   if(/^Вы\s/.test(s))s=s.replace(/[А-Яа-яёЁ]+/g,w=>VERB[w]||w);
@@ -427,7 +536,7 @@ function setSel(i){
   if(sel!==i){
     tradeMsg='';
     // на чужой объект меняться можно только своим — сразу подставим его в форму
-    const pre=CELLS[i].type==='obj'&&objOwned(0)>0?myObj(0):-1;
+    const pre=CELLS[i].type==='obj'&&objOwned(mySeat)>0?myObj(mySeat):-1;
     draft={j:pre,cash:r10(CELLS[i].price*1.5+(level[i]||0)*upVal(i)*1.3)};
   }
   sel=i;
@@ -483,7 +592,7 @@ const CHANCE=[
   {t:'шаг назад на 3 клетки',fn:async p=>{await move(p,-3);await land(p)}},
   {t:'прогулка до Замка',fn:async p=>{await move(p,(CASTLE-p.pos+N)%N);await land(p)}},
   {t:'бесплатное улучшение',fn:async p=>{const o=owned(p.id).filter(i=>canUpgrade(p.id,i));
-    if(o.length){const i=o[Math.random()*o.length|0];level[i]++;log(`${p.name} бесплатно улучшает ${acc(i)}`)}
+    if(o.length){const i=pick(o);level[i]++;log(`${p.name} бесплатно улучшает ${acc(i)}`)}
     else{p.money+=50;log(`${p.name}: улучшать нечего, вместо этого +50`)}}},
   {t:'соседи платят по 10 за каждую вашу улицу',fn:async p=>{const n=10*PROPS.filter(i=>owner[i]===p.id).length;others(p).forEach(o=>{o.money-=n;p.money+=n})}},
 ];
@@ -506,16 +615,17 @@ function buildBoard(){
   const R=document.createElement('div');R.className='inner';R.id='innerR';R.style.gridRow='2/5';R.style.gridColumn='5/7';b.appendChild(R);
 }
 function heatMap(){
-  const heat={};const me=players[0];
-  if(!idle()||!me.alive)return heat;
+  const heat={};const me=players[mySeat];
+  if(!idle()||!me||!me.alive)return heat;
   for(let s=2;s<=12;s++){
     const i=cellAt((me.pos+s)%N),c=CELLS[i],pr=(6-Math.abs(s-7))/36;
-    const bad=((c.type==='prop'||c.type==='obj')&&owner[i]>0&&!mort[i])||c.type==='tax'||c.type==='gojail';
+    const bad=((c.type==='prop'||c.type==='obj')&&owner[i]>=0&&owner[i]!==mySeat&&!mort[i])||c.type==='tax'||c.type==='gojail';
     if(bad)heat[i]=(heat[i]||0)+pr;
   }
   return heat;
 }
 function renderCells(){
+  if(replaying)return;
   const heat=heatMap();
   const mob=isMobile();   // на узкой клетке слово «сбор» не помещается рядом с точками уровней
   CELLS.forEach((c,i)=>{
@@ -523,9 +633,9 @@ function renderCells(){
     const royal=level[i]>0&&level[i]===maxLv(i);
     const lv=level[i]?(royal?'<span class="lv max"><b></b></span>':`<span class="lv">${'<i></i>'.repeat(level[i])}</span>`):'';
     if(c.type==='prop'){
-      h+=`<div class="band" style="background:${GROUP[c.g]}"></div><div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:mort[i]?'в залоге':(o>0&&heat[i]?'−':'')+rentOf(i)}</span>${lv}</div>`;
+      h+=`<div class="band" style="background:${GROUP[c.g]}"></div><div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:mort[i]?'в залоге':(heat[i]?'−':'')+rentOf(i)}</span>${lv}</div>`;
     } else if(c.type==='obj'){
-      h+=`<div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:(o>0&&heat[i]?'−':'')+(mob?'':'сбор ')+rentOf(i)}</span>${lv}</div>`;
+      h+=`<div class="nm">${c.name}</div><div class="pr"><span>${o<0?c.price:(heat[i]?'−':'')+(mob?'':'сбор ')+rentOf(i)}</span>${lv}</div>`;
     } else {
       const sub={start:'+200',chance:'',jail:`выкуп ${BAIL}`,gojail:'до 3 ходов',tax:`${c.amount}`}[c.type]||'';
       const sign={start:'▶',jail:'▦',gojail:'⇥',tax:'⊖',chance:'?'}[c.type]||'';
@@ -537,13 +647,15 @@ function renderCells(){
     el.style.background=o>=0?`color-mix(in srgb, ${COLORS[o]} ${mort[i]?12:26}%, ${base})`:'';
     if(royal)h+='<div class="rf"></div>';
     if(heat[i])h+=`<div class="risk" style="height:${(1.5+heat[i]*7).toFixed(1)}px"></div>`;
-    h+=`<div class="tokens">${players.filter(p=>p.alive&&cellAt(p.pos)===i).map(p=>`<span class="tk"><span class="tok ${p.id===0?'me':''} ${hop===p.id?'hop':''}" style="background:${COLORS[p.id]};color:${COLORS[p.id]}">${p.id===0&&!busy?'<span class="pulse"></span>':''}</span><span class="tarr" style="color:${COLORS[p.id]}">${p.jail?'⏸':routeArrow(p.pos)}</span></span>`).join('')}</div>`;
+    h+=`<div class="tokens">${players.filter(p=>p.alive&&cellAt(p.pos)===i).map(p=>`<span class="tk"><span class="tok ${isMe(p.id)?'me':''} ${hop===p.id?'hop':''}" style="background:${COLORS[p.id]};color:${COLORS[p.id]}">${isMe(p.id)&&!busy?'<span class="pulse"></span>':''}</span><span class="tarr" style="color:${COLORS[p.id]}">${p.jail?'⏸':routeArrow(p.pos)}</span></span>`).join('')}</div>`;
     el.innerHTML=h;
-    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('here',!!(players.length&&players[0].alive&&cellAt(players[0].pos)===i));
+    const me=players[mySeat];
+    el.classList.toggle('sel',sel===i);el.classList.toggle('mort',!!mort[i]);el.classList.toggle('hotc',!!heat[i]);el.classList.toggle('royal',royal);el.classList.toggle('here',!!(me&&me.alive&&cellAt(me.pos)===i));
     el.setAttribute('aria-label',c.name+(heat[i]?', опасная клетка':''));
   });
 }
 function renderPlayers(){
+  if(replaying)return;
   $('players').innerHTML=players.length?players.map(p=>`<div class="pl ${p.alive?'':'out'} ${p.id===cur&&!over?'cur':''}">
     <span class="dot" style="background:${COLORS[p.id]}"></span>
     <div class="pmain"><div class="prow"><span class="name">${p.name}${p.jail?', в тюрьме':''}</span><span class="money">${p.money}</span></div>
@@ -556,9 +668,9 @@ function tradeForm(){
   if(mort[sel])return `<p class="mut">Заложенные улицы боты не продают.</p>`;
   if(!idle())return `<p class="mut">Сделки можно предлагать в свой ход до броска кубиков.</p>`;
   if(lastAsk[sel]===round)return `<p class="mut">${bot.name} уже отказал в этом ходу. ${tradeMsg}</p>`;
-  const mine=owned(0).filter(tradable);
+  const mine=owned(mySeat).filter(tradable);
   h+=`<p><b>Сделка с ${bot.name}</b></p>`;
-  if(CELLS[sel].type==='obj'&&objOwned(0)>0)h+=`<p class="mut">Объект в центре у вас уже есть (${label(myObj(0))}), а больше одного держать нельзя. Обмен пройдёт, только если вы отдадите его.</p>`;
+  if(CELLS[sel].type==='obj'&&objOwned(mySeat)>0)h+=`<p class="mut">Объект в центре у вас уже есть (${label(myObj(mySeat))}), а больше одного держать нельзя. Обмен пройдёт, только если вы отдадите его.</p>`;
   if(level[sel])h+=`<p class="mut">Здесь есть улучшения (${level[sel]}), они переходят вместе с клеткой, поэтому бот попросит больше.</p>`;
   h+=`<label class="fld">Отдать своё<select id="tSt"><option value="-1">ничего</option>${mine.map(j=>`<option value="${j}" ${draft.j==j?'selected':''}>${label(j)} (${CELLS[j].price}${level[j]?`, улучшений ${level[j]}`:''})</option>`).join('')}</select></label>
   <label class="fld">Доплатить деньгами<input id="tCash" type="number" step="10" value="${draft.cash}"></label>
@@ -570,10 +682,12 @@ function tradeForm(){
 function renderInfo(){
   const info=$('info');
   if(sel<0){
-    const me=players[0];
+    const me=players[mySeat];
     const hand=me&&me.cards.length?`<p><b>Ваши карточки</b></p>${[...new Set(me.cards)].map(k=>`<p>🃏 ${CARDS[k].n}${me.cards.filter(x=>x===k).length>1?' ×'+me.cards.filter(x=>x===k).length:''} — ${CARDS[k].d}</p>`).join('')}`:'';
     info.innerHTML='<p class="mut">Нажмите на клетку, чтобы посмотреть детали, заложить улицу, улучшить объект или предложить сделку.</p>'+hand;return}
-  const c=CELLS[sel],o=owner[sel]??-1,me=players[0];
+  const c=CELLS[sel],o=owner[sel]??-1,me=players[mySeat];
+  // торговаться можно только с ботом: обмен между живыми игроками в этой версии не сделан
+  const dealable=o>=0&&o!==mySeat&&players[o]&&players[o].alive&&players[o].bot;
   if(c.type!=='prop'&&c.type!=='obj'){
     const d={start:'Проходя Старт, получаете 200.',chance:`Случайное событие или бонусная карточка, примерно поровну. Событие сразу даёт или отнимает деньги, перемещает фишку либо бесплатно улучшает клетку. Карточка остаётся у вас на руках, пока вы сами её не примените: ${Object.values(CARDS).map(c=>'«'+c.n+'»').join(', ')}.`,jail:`Попавшие сюда сидят до трёх ходов. Каждый ход можно бросить на дубль, заплатить выкуп ${BAIL} или использовать карточку «Освобождение». После третьей неудачи выкуп спишется автоматически.`,gojail:'Отправляет в тюрьму на один ход.',tax:`Заплатите ${c.amount}.`}[c.type];
     info.innerHTML=`<p><b>${c.name}</b></p><p>${d}</p>`;return;
@@ -585,22 +699,22 @@ function renderInfo(){
       <p class="mut">${OBJ_VALS[c.key].map((_,l)=>`Уровень ${l+1}: ${c.desc(l)}`).join('.<br>')}.</p>
       <p class="mut">Сбор с других игроков: ${FEE.slice(0,maxLv(sel)+1).join(' / ')}.</p>
       <p>Владелец: ${o>=0?players[o].name+`, уровень ${level[sel]+1}. Сейчас: ${c.desc(level[sel])}`:'нет'}.</p>`;
-    if(players.length&&!over&&o===0){
+    if(players.length&&!over&&o===mySeat){
       let why='';
       if(level[sel]>=maxLv(sel))why='Объект улучшен до максимума.';
       else if(!idle())why='Улучшать можно в свой ход до броска кубиков.';
       else if(me.money<upCost(sel))why=`Не хватает денег: нужно ${upCost(sel)}.`;
       h+=`<div class="actions"><button class="btn" data-act="up" ${why?'disabled':''}>Улучшить за ${upCost(sel)}</button></div>${why?`<p class="mut">${why}</p>`:''}`;
     }
-    if(players.length&&!over&&o>0&&players[o].alive)h+=tradeForm();
+    if(players.length&&!over&&dealable)h+=tradeForm();
   } else {
     const b=baseRent(sel);
     h=`<p><b>${c.name}</b></p><p>Цена ${c.price}, улучшение ${upCost(sel)}, залог ${mortVal(sel)}.</p>
       <p class="mut">Аренда: ${b}, с кварталом ${b*2}, улучшения ${MULT.slice(1,-1).map(m=>b*m).join(' / ')}, королевская ${b*MULT[MULT.length-1]}. Квартал «${GNAME[c.g]}», в нём ${gsize(c.g)} улицы: ${inGroup(c.g).map(j=>CELLS[j].name).join(', ')}.</p>
       <p>Владелец: ${o>=0?players[o].name:'нет'}${mort[sel]?', в залоге':''}${o>=0&&!mort[sel]?`. Аренда сейчас ${rentOf(sel)}`:''}${level[sel]?`, уровень ${level[sel]}`:''}.</p>`;
     if(o>=0&&!mort[sel]&&objBonus(o)>0)h+=`<p class="mut">Рынок владельца добавляет +${Math.round(objBonus(o)*100)}% аренды.</p>`;
-    if(players.length&&!over&&o===0){
-      const missing=inGroup(c.g).filter(j=>owner[j]!==0).map(j=>CELLS[j].name);
+    if(players.length&&!over&&o===mySeat){
+      const missing=inGroup(c.g).filter(j=>owner[j]!==mySeat).map(j=>CELLS[j].name);
       let why='';
       if(missing.length)why=`Для улучшения нужен весь квартал. Не хватает: ${missing.join(', ')}.`;
       else if(inGroup(c.g).some(j=>mort[j]))why='Выкупите улицы квартала из залога, чтобы улучшать.';
@@ -613,7 +727,7 @@ function renderInfo(){
       else if(groupClean(sel))h+=`<button class="btn ghost" data-act="mort" ${idle()?'':'disabled'}>Заложить: +${mortVal(sel)}</button>`;
       h+=`</div>${why?`<p class="mut">${why}</p>`:''}`;
     }
-    if(players.length&&!over&&o>0&&players[o].alive)h+=tradeForm();
+    if(players.length&&!over&&dealable)h+=tradeForm();
   }
   info.innerHTML=you(h);
   info.querySelectorAll('[data-act]').forEach(btn=>btn.onclick=()=>ownAction(btn.dataset.act,sel));
@@ -637,6 +751,7 @@ function setMainButton(list){
   return list.filter(a=>a!==main);
 }
 function renderCenter(){
+  if(replaying)return;
   const L=$('innerL'),R=$('innerR'),bar=$('acts'),sb=$('sbar');
   if(!players.length){
     L.innerHTML=`<h1>Кварталы</h1><div class="small-note mut">Поле-восьмёрка</div>`;
@@ -647,17 +762,17 @@ function renderCenter(){
   const dbl=dice[0]===dice[1]?'dbl':'';
   L.innerHTML=`<div class="dice"><div class="die ${dbl}">${dice[0]}</div><div class="die ${dbl}">${dice[1]}</div></div><div class="small-note mut">Ход ${round+1}</div>`;
   if(over){
-    R.innerHTML=`<h1>${players[0].alive?'Победа':'Конец игры'}</h1>`;
+    R.innerHTML=`<h1>${players[mySeat].alive&&players.filter(p=>p.alive).length<=1?'Победа':'Конец игры'}</h1>`;
     sb.textContent='';setMainButton([]);
     bar.innerHTML='<button class="btn" id="cStats">Итоги</button><button class="btn ghost" id="cNew">Новая игра</button>';
     $('cStats').onclick=showEnd;$('cNew').onclick=showSetup;return;
   }
   const txt=you(status);
   // на узком экране центр восьмёрки слишком мал для текста: там сводка по себе, статус — под доской
-  const me=players[0];
-  const full=GROUPS.filter(g=>hasGroup(0,g)).length;
-  const obj=myObj(0);
-  const summary=`<div class="mysum">${streetsOf(0)} ${plural(streetsOf(0),'улица','улицы','улиц')}`
+  const me=players[mySeat];
+  const full=GROUPS.filter(g=>hasGroup(mySeat,g)).length;
+  const obj=myObj(mySeat);
+  const summary=`<div class="mysum">${streetsOf(mySeat)} ${plural(streetsOf(mySeat),'улица','улицы','улиц')}`
     +(full?` · ${full} ${plural(full,'квартал','квартала','кварталов')}`:'')
     +(obj>=0?` · ${CELLS[obj].name}`:'')+`</div>`;
   R.innerHTML=isMobile()
@@ -673,15 +788,16 @@ function renderCenter(){
 }
 /* Лог читается по диагонали: точка игрока слева, а цветом отмечаем только СВОИ деньги —
    расчёты между ботами остаются нейтральными, иначе пестрит и смысл теряется. */
-const LOG_MY_LOSS=/(платите|заплатили|гасите|закладываете|продали улучшение|выкупаете|разорились|банкрот)/i;
-const LOG_MY_GAIN=/(получаете|покупаете|купили|выигрываете|улучшили|довели|выкупили|проходите Старт)/i;
+const LOG_MY_LOSS=/(платите|заплатили|гасите|закладываете|продаёте улучшение|выкупаете|разорились|банкрот)/i;
+const LOG_MY_GAIN=/(получаете|покупаете|купили|выигрываете|улучшаете|доводите|проходите Старт)/i;
 function logClass(m){
   if(/^Вы[ ,]/.test(m))return LOG_MY_LOSS.test(m)?'loss':LOG_MY_GAIN.test(m)?'gain':'';
   return /\bвам\b/i.test(m)?'gain':'';
 }
 function renderLog(){
+  if(replaying)return;
   $('log').innerHTML=logs.map(m=>{
-    const pid=NAMES.findIndex(n=>m.startsWith(n));
+    const pid=players.findIndex(p=>m.startsWith(p.name));
     const dot=pid>=0?`<i style="background:${COLORS[pid]}"></i>`:'<i class="noone"></i>';
     return `<div class="le ${logClass(m)}">${dot}<span>${m}</span></div>`;
   }).join('');
@@ -691,7 +807,8 @@ function renderTools(){
   $('sndBtn').textContent=settings.sound?'Звук: вкл':'Звук: выкл';
   $('hapBtn').textContent=settings.haptic?'Вибро: вкл':'Вибро: выкл';
 }
-function render(){renderCells();renderPlayers();renderInfo();renderCenter();renderTools()}
+// при перемотке журнала после переподключения рисовать промежуточные кадры незачем
+function render(){if(replaying)return;renderCells();renderPlayers();renderInfo();renderCenter();renderTools()}
 
 /* ---------- вкладки панелей (узкий экран) ---------- */
 let pane='players';
@@ -726,7 +843,8 @@ const loadSave=()=>{
 };
 const clearSave=()=>{try{localStorage.removeItem(SKEY)}catch(e){}cloudSave=null;cloudDrop(SKEY)};
 function save(){
-  const snap=logs=>JSON.stringify({players,owner,level,mort,cellRent,maxHit,logs,cur,round,lastAsk,botCool,diff,dice});
+  if(MP)return;   // в сетевой партии источник истины — комната на сервере, локальный снимок только помешает
+  const snap=logs=>JSON.stringify({players,owner,level,mort,cellRent,maxHit,logs,cur,round,lastAsk,botCool,diff,dice,rndS});
   try{localStorage.setItem(SKEY,snap(logs.slice(0,40)))}catch(e){}
   cloudPut(SKEY,snap(logs.slice(0,6)));
 }
@@ -740,21 +858,24 @@ function showSetup(){
     ${seg('Сложность ботов','diff',[['easy','Лёгкие'],['normal','Обычные'],['hard','Сложные']])}
     <p class="mut">${DIFF_DESC[settings.diff]}</p>
     ${seg('Скорость ботов','speed',[['slow','Медленно'],['normal','Обычно'],['fast','Быстро'],['instant','Мгновенно']])}
-    <div class="actions"><button class="btn" id="goStart">Начать игру</button>
+    <div class="actions"><button class="btn" id="goStart">Играть с ботами</button>
+    <button class="btn ghost" id="goRoom">Играть с друзьями</button>
     ${s&&!resumable?'<button class="btn ghost" id="goResume">Продолжить сохранённую</button>':''}
     ${resumable?'<button class="btn ghost" id="goCancel">Вернуться к игре</button>':''}</div>
+    <p class="mut" style="font-size:12px">«Играть с друзьями» создаёт комнату: вы получите ссылку, свободные места добираются ботами.</p>
     <p class="mut" style="font-size:12px;text-align:center;margin-top:2px">Сборка ${BUILD}</p>`,resumable);
   $('card').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const k=b.dataset.k;settings[k]=k==='bots'?+b.dataset.v:b.dataset.v;savePrefs();renderTools();showSetup()});
   $('goStart').onclick=startGame;
+  $('goRoom').onclick=()=>mpConnect('');
   if($('goResume'))$('goResume').onclick=()=>resume(s);
   if($('goCancel'))$('goCancel').onclick=hideOverlay;
 }
 function showEnd(){
-  const win=players[0].alive;
   const rank=[...players].sort((a,b)=>(b.alive-a.alive)||worth(b)-worth(a));
+  const win=players[mySeat].alive&&players.filter(p=>p.alive).length<=1;
   const best=[...PROPS,...OBJS].reduce((m,i)=>cellRent[i]>(m<0?0:cellRent[m])?i:m,-1);
-  overlay(`<h2 class="ot">${win?'Победа':'Вы разорились'}</h2>
-    <p>${win?'Все боты обанкротились.':`Лидер среди оставшихся: ${rank[0].name}.`} Сыграно ходов: ${round+1}.</p>
+  overlay(`<h2 class="ot">${win?'Победа':players[mySeat].alive?'Партия окончена':'Вы разорились'}</h2>
+    <p>${win?'Соперники обанкротились.':`Лидер среди оставшихся: ${rank[0].name}.`} Сыграно ходов: ${round+1}.</p>
     <div class="tbl-wrap"><table><thead><tr><th>Игрок</th><th>Капитал</th><th>Получил</th><th>Заплатил</th><th>Куплено</th></tr></thead>
     <tbody>${rank.map(p=>`<tr class="${p.alive?'':'out'}"><td><span class="dot" style="background:${COLORS[p.id]}"></span>${p.name}</td><td>${p.alive?worth(p):'банкрот'}</td><td>${p.st.rentIn}</td><td>${p.st.rentOut}</td><td>${p.st.bought}</td></tr>`).join('')}</tbody></table></div>
     <p class="mut">Получил и заплатил — аренда улиц и сборы объектов.</p>
@@ -765,81 +886,170 @@ function showEnd(){
 }
 
 /* ---------- ход игры ---------- */
-function startGame(){
-  gen++;diff=settings.diff;
-  players=Array.from({length:settings.bots+1},(_,i)=>({id:i,name:NAMES[i],money:1500,pos:0,jail:0,alive:true,bot:i>0,risk:RISK[i],cards:[],shield:false,boost:false,discount:false,extra:0,st:{rentIn:0,rentOut:0,bought:0}}));
+/* Стол собирается из списка мест: у каждого имя и признак «за него играет ИИ».
+   В одиночной партии место одно — моё, остальные боты; в сетевой места раздаёт сервер. */
+function resetTable(seats,seed,d){
+  gen++;evReset();rndS=seed|0;diff=d;
+  players=seats.map((s,i)=>({id:i,name:s.name,money:1500,pos:0,jail:0,alive:true,bot:!!s.bot,risk:RISK[i],
+    cards:[],shield:false,boost:false,discount:false,extra:0,st:{rentIn:0,rentOut:0,bought:0}}));
   owner=CELLS.map(()=>-1);level=CELLS.map(()=>0);mort=CELLS.map(()=>false);cellRent=CELLS.map(()=>0);maxHit=null;
   cur=0;round=0;lastAsk={};botCool={};over=false;sel=-1;dice=[1,1];logs=[];
-  guardClosing(true);
-  hideOverlay();log('Игра началась. У каждого по 1500.');humanIdle();
+  pending=null;idleCtx=null;busy=false;tradeMsg='';
+  buildNameRe();
+}
+function startGame(){
+  MP=false;mySeat=0;net.mode='local';
+  const seats=[{name:'Вы',bot:false},...Array.from({length:settings.bots},(_,i)=>({name:NAMES[i+1],bot:true}))];
+  resetTable(seats,Math.random()*0x7FFFFFFF|0,settings.diff);
+  guardClosing(true);hideOverlay();log('Игра началась. У каждого по 1500.');
+  runGame();
 }
 function resume(s){
-  gen++;({players,owner,level,mort,cellRent,maxHit,logs,cur,round,lastAsk,botCool,diff,dice}=s);
-  over=false;sel=-1;guardClosing(true);hideOverlay();log('Партия продолжена.');humanIdle();
+  MP=false;mySeat=0;net.mode='local';
+  gen++;evReset();
+  ({players,owner,level,mort,cellRent,maxHit,logs,cur,round,lastAsk,botCool,diff,dice}=s);
+  rndS=s.rndS|0;
+  over=false;sel=-1;pending=null;idleCtx=null;busy=false;tradeMsg='';
+  buildNameRe();guardClosing(true);hideOverlay();log('Партия продолжена.');
+  runGame();
 }
 // свернуть мини-апп посреди партии легко случайно — просим подтверждение
 function guardClosing(on){
   if(!tgAtLeast('6.2'))return;
   try{on?TG.enableClosingConfirmation():TG.disableClosingConfirmation()}catch(e){}
 }
-function humanIdle(){
-  busy=false;cur=0;
-  const me=players[0];
-  const ups=owned(0).filter(i=>canUpgrade(0,i)&&me.money>=upCost(i));
+/* Главный цикл партии. Один и тот же у всех клиентов: он детерминирован, а все развилки,
+   которые нельзя вычислить, приходят событиями (кубики и решения живых игроков). */
+// цикл живёт до конца партии; падение внутри него иначе утонуло бы в unhandled rejection
+const runGame=()=>gameLoop().catch(e=>{if(e===STALE)return;console.error(e);status='Ошибка в ходе партии, см. консоль.';actions=[];render()});
+async function gameLoop(){
+  try{
+    while(!over){
+      if(gameEnded())return endGame();
+      const p=players[cur];
+      if(p.alive){
+        if(p.bot){busy=true;actions=[];idleCtx=null;status=`Ходит ${p.name}.`;render();await wait(400);await turn(p)}
+        else{
+          const a=await idlePhase(p);
+          if(a.k==='teleport')await doTeleport(p,a.i);
+          else await turn(p);
+        }
+      }
+      if(over)return;
+      if(gameEnded())return endGame();
+      advance();
+    }
+  }catch(e){if(e!==STALE)throw e}
+}
+function advance(){do{cur=(cur+1)%players.length;if(cur===0)round++}while(!players[cur].alive)}
+/* Фаза до броска: игрок строит, закладывает, меняется — и заканчивает её броском.
+   Каждое действие едет отдельным событием, поэтому у всех за столом одинаковая картина. */
+async function idlePhase(p){
+  while(true){
+    const seq=evCur;
+    renderIdle(p,seq);
+    if(p.id!==mySeat&&mp.absent.has(p.id))evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}});
+    const ev=await evStall(seq,p.id,()=>evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}}));
+    const a=ev.v;
+    if(a.k==='roll'||a.k==='teleport')return a;
+    applyIdle(p,a);
+  }
+}
+let idleCtx=null;   // {p,seq,send} — живёт ровно пока идёт моя фаза до броска
+function renderIdle(p,seq){
+  busy=false;
+  if(p.id!==mySeat){
+    idleCtx=null;actions=[];
+    status=`Ходит ${p.name}${p.jail?', сидит в тюрьме':''}.`;
+    render();return;
+  }
+  const send=v=>{idleCtx=null;evEmit({kind:'act',seat:p.id,seq,v})};
+  idleCtx={p,seq,send};
+  const me=players[mySeat];
   if(pending){
     status=`Карточка «${CARDS[pending].n}»: выберите клетку на поле.`;
-    actions=[['Отменить карточку',()=>{pending=null;humanIdle()},true]];
+    actions=[['Отменить карточку',()=>{pending=null;renderIdle(p,seq)},true]];
     save();render();return;
   }
   status='Ваш ход. Красным подсвечены клетки, где этим броском придётся платить.';
+  const ups=owned(mySeat).filter(i=>canUpgrade(mySeat,i)&&me.money>=upCost(i));
   const cardBtns=[...new Set(me.cards)].filter(k=>k!=='free').map(k=>{
     const cnt=me.cards.filter(x=>x===k).length;
     return [`🃏 ${CARDS[k].n}${cnt>1?' ×'+cnt:''}`,()=>useCard(k),true];
   });
-  actions=[['Бросить кубики',()=>turn()],...ups.slice(0,4).map(i=>[`Улучшить ${label(i)}: ${upCost(i)}`,()=>ownAction('up',i),true]),...cardBtns];
+  actions=[['Бросить кубики',()=>send({k:'roll'})],
+    ...ups.slice(0,4).map(i=>[`Улучшить ${label(i)}: ${upCost(i)}`,()=>send({k:'up',i}),true]),...cardBtns];
   save();render();
 }
 function useCard(k){
-  if(!idle())return;
-  const me=players[0];
+  if(!idleCtx)return;
+  const me=players[mySeat];
   if(!me.cards.includes(k))return;
-  if(CARDS[k].target){pending=k;humanIdle();return}
-  me.cards.splice(me.cards.indexOf(k),1);
-  if(k==='shield'){me.shield=true;log('Вы активировали «Щит»: следующий платёж бесплатен')}
-  if(k==='boost'){me.boost=true;log('Вы активировали «Двойная аренда»')}
-  if(k==='discount'){me.discount=true;log('Вы активировали «Скидка»: следующая покупка дешевле на 30%')}
-  if(k==='extra'){me.extra++;log('Вы активировали «Лишний бросок»')}
-  humanIdle();
+  if(CARDS[k].target){pending=k;renderIdle(idleCtx.p,idleCtx.seq);return}
+  idleCtx.send({k:'card',key:k});
 }
-async function applyPending(i){
-  const me=players[0],k=pending;
-  if(k==='repair'){
-    if(!canUpgrade(0,i)){tradeMsg='';status='Эту клетку улучшить нельзя, выберите другую.';return render()}
-    me.cards.splice(me.cards.indexOf(k),1);pending=null;level[i]++;
-    log(`Вы применили «Ремонтная бригада» на ${label(i)}`);sfx.buy();humanIdle();return;
-  }
-  if(k==='teleport'){
-    const target=PATH.findIndex((c,idx)=>c===i&&idx!==me.pos);
-    if(target<0){status='Сюда переместиться нельзя.';return render()}
-    me.cards.splice(me.cards.indexOf(k),1);pending=null;
-    try{
-      busy=true;actions=[];gen;
-      log(`Вы применили «Телепорт» на ${label(i)}`);
-      me.pos=target;hop=0;render();await wait(400);hop=-1;
-      await land(me);settleAll();render();await wait(400);nextTurn();
-    }catch(e){if(e!==STALE)throw e}
-    return;
-  }
+function applyPending(i){
+  if(!idleCtx||!pending)return;
+  const k=pending,me=players[mySeat];
+  if(k==='repair'&&!canUpgrade(mySeat,i)){status='Эту клетку улучшить нельзя, выберите другую.';return render()}
+  if(k==='teleport'&&PATH.findIndex((c,idx)=>c===i&&idx!==me.pos)<0){status='Сюда переместиться нельзя.';return render()}
+  pending=null;
+  idleCtx.send(k==='teleport'?{k:'teleport',i}:{k:'card',key:k,i});
 }
 function ownAction(a,i){
-  if(!idle()||owner[i]!==0)return;
-  const me=players[0];
-  if(a==='up'&&canUpgrade(0,i)&&me.money>=upCost(i)){me.money-=upCost(i);level[i]++;
-    log(level[i]===maxLv(i)?`Вы довели ${acc(i)} до королевского уровня`:`Вы улучшили ${label(i)} до уровня ${level[i]+(CELLS[i].type==='obj'?1:0)}`);sfx.buy()}
-  if(a==='sell'&&level[i]&&CELLS[i].type==='prop'){level[i]--;me.money+=Math.round(upCost(i)/2);log(`Вы продали улучшение на ${prep(i)}`)}
-  if(a==='mort'&&CELLS[i].type==='prop'&&!mort[i]&&groupClean(i)){mort[i]=true;me.money+=mortVal(i);log(`Вы заложили ${acc(i)}`)}
-  if(a==='unmort'&&mort[i]&&me.money>=unmortCost(i)){mort[i]=false;me.money-=unmortCost(i);log(`Вы выкупили ${acc(i)} из залога`)}
-  humanIdle();
+  if(!idleCtx||owner[i]!==mySeat)return;
+  idleCtx.send({k:a,i});
+}
+/* Применение действия фазы. Выполняется на ВСЕХ клиентах одинаково, поэтому здесь
+   не должно быть ни одной проверки, завязанной на mySeat, — только правила. */
+function applyIdle(p,a){
+  // значение приехало по сети — прежде чем считать по нему правила, проверяем форму
+  if(!a||typeof a!=='object')return;
+  const i=a.i;
+  const okCell=x=>Number.isInteger(x)&&x>=0&&x<CELLS.length;
+  if(a.k==='card'){if(CARDS[a.key]&&CARDS[a.key].target&&!okCell(i))return}
+  else if(!okCell(i))return;
+  if(a.k==='trade'&&!((a.j===-1||okCell(a.j))&&Number.isFinite(a.cash)))return;
+  if(a.k==='up'&&owner[i]===p.id&&canUpgrade(p.id,i)&&p.money>=upCost(i)){
+    p.money-=upCost(i);level[i]++;
+    log(level[i]===maxLv(i)?`${p.name} доводит ${acc(i)} до королевского уровня`
+      :`${p.name} улучшает ${label(i)} до уровня ${level[i]+(CELLS[i].type==='obj'?1:0)}`);sfx.buy();
+  }
+  else if(a.k==='sell'&&owner[i]===p.id&&level[i]&&CELLS[i].type==='prop'){
+    level[i]--;p.money+=Math.round(upCost(i)/2);log(`${p.name} продаёт улучшение на ${prep(i)}`);
+  }
+  else if(a.k==='mort'&&owner[i]===p.id&&CELLS[i].type==='prop'&&!mort[i]&&groupClean(i)){
+    mort[i]=true;p.money+=mortVal(i);log(`${p.name} закладывает ${acc(i)}`);
+  }
+  else if(a.k==='unmort'&&owner[i]===p.id&&mort[i]&&p.money>=unmortCost(i)){
+    mort[i]=false;p.money-=unmortCost(i);log(`${p.name} выкупает ${acc(i)} из залога`);
+  }
+  else if(a.k==='card')applyCard(p,a.key,i);
+  else if(a.k==='trade')applyTrade(p,i,a.j,a.cash);
+  render();
+}
+function applyCard(p,key,i){
+  const ci=p.cards.indexOf(key);if(ci<0)return;
+  if(key==='repair'){
+    if(!canUpgrade(p.id,i))return;
+    p.cards.splice(ci,1);level[i]++;log(`${p.name} применяет «Ремонтную бригаду» на ${prep(i)}`);sfx.buy();return;
+  }
+  p.cards.splice(ci,1);
+  if(key==='shield'){p.shield=true;log(`${p.name} применяет карточку «Щит»`)}
+  else if(key==='boost'){p.boost=true;log(`${p.name} применяет карточку «Двойная аренда»`)}
+  else if(key==='discount'){p.discount=true;log(`${p.name} применяет карточку «Скидка»`)}
+  else if(key==='extra'){p.extra++;log(`${p.name} применяет карточку «Лишний бросок»`)}
+}
+async function doTeleport(p,i){
+  if(!Number.isInteger(i)||i<0||i>=CELLS.length)return;
+  const ci=p.cards.indexOf('teleport');if(ci<0)return;
+  const target=PATH.findIndex((c,idx)=>c===i&&idx!==p.pos);
+  if(target<0)return;
+  p.cards.splice(ci,1);
+  busy=true;actions=[];idleCtx=null;
+  log(`${p.name} применяет «Телепорт» на ${prep(i)}`);
+  p.pos=target;hop=p.id;render();await wait(400);hop=-1;
+  await land(p);settleAll();render();await wait(400);
 }
 function payRent(p,i){
   const o=players[owner[i]];let r=rentOf(i);
@@ -866,11 +1076,13 @@ function settle(p){
   if(p.money<0){
     p.alive=false;p.money=0;
     owned(p.id).forEach(i=>{owner[i]=-1;level[i]=0;mort[i]=false});
-    log(`${p.name} — банкрот`);if(p.id===0)sfx.lose();
+    log(`${p.name} — банкрот`);if(isMe(p.id))sfx.lose();
   }
 }
 const settleAll=()=>players.forEach(settle);
-const gameEnded=()=>!players[0].alive||players.filter(p=>p.alive).length<=1;
+/* В сетевой партии моё банкротство её не заканчивает — остальные доигрывают, я смотрю.
+   В одиночной смотреть не на что: без меня за столом одни боты. */
+const gameEnded=()=>players.filter(p=>p.alive).length<=1||(!MP&&!players[mySeat].alive);
 
 async function move(p,steps){
   const dir=Math.sign(steps);
@@ -898,6 +1110,14 @@ async function move(p,steps){
   }
   hop=-1;
 }
+/* Значение кубиков приходит событием, а крутящаяся анимация рисуется локально:
+   запрос уходит до анимации, поэтому сетевая задержка прячется под ней. */
+async function rollDice(p,label){
+  const pr=evDice(p.id);pr.catch(()=>{});
+  for(let x=0;x<6;x++){dice=[1+Math.random()*6|0,1+Math.random()*6|0];status=label;sfx.roll();renderCenter();await wait(60)}
+  dice=await pr;renderCenter();
+  return dice[0]+dice[1];
+}
 async function jailTurn(p){
   const hasCard=p.cards.includes('free');
   let choice;
@@ -906,61 +1126,54 @@ async function jailTurn(p){
     if(choice==='pay'&&p.money<BAIL)choice='roll';
     status=`${p.name} в тюрьме, попыток осталось ${p.jail}`;render();await wait(600);
   } else {
-    const btns=[['Бросить на дубль','roll']];
+    // бросок стоит последним: по таймауту подставляется именно он, а не трата денег
+    const btns=[];
     if(p.money>=BAIL)btns.push([`Заплатить ${BAIL} и выйти`,'pay',true]);
     if(hasCard)btns.push(['Карточка «Освобождение»','card',true]);
-    choice=await ask(`Вы в тюрьме. Попыток выбросить дубль: ${p.jail}. Выкуп стоит ${BAIL}. На третьей неудаче выкуп спишется сам.`,btns,true);
+    btns.push(['Бросить на дубль','roll']);
+    choice=await evAsk(p.id,`В тюрьме. Попыток выбросить дубль: ${p.jail}. Выкуп стоит ${BAIL}. На третьей неудаче выкуп спишется сам.`,btns,true);
   }
   if(choice==='card'){p.cards.splice(p.cards.indexOf('free'),1);p.jail=0;status=`${p.name} выходит из тюрьмы по карточке`;log(status);sfx.buy();render();await wait(500);return true}
   if(choice==='pay'){p.money-=BAIL;p.jail=0;status=`${p.name} платит выкуп ${BAIL} и выходит`;log(status);sfx.pay();render();await wait(500);return true}
-  for(let x=0;x<6;x++){dice=[1+Math.random()*6|0,1+Math.random()*6|0];sfx.roll();status=`${p.name} бросает на дубль`;renderCenter();await wait(60)}
+  const steps=await rollDice(p,`${p.name} бросает на дубль`);
   if(dice[0]===dice[1]){p.jail=0;status=`${p.name} выбрасывает дубль ${dice[0]} и выходит из тюрьмы`;log(status);render();await wait(700);
-    await move(p,dice[0]+dice[1]);await land(p);return false}
+    await move(p,steps);await land(p);return false}
   p.jail--;
   if(p.jail===0){p.money-=BAIL;status=`${p.name} отсидел три попытки, платит выкуп ${BAIL} и выходит`;log(status);sfx.pay();render();await wait(700);
-    await move(p,dice[0]+dice[1]);await land(p);return false}
+    await move(p,steps);await land(p);return false}
   status=`${p.name} не выбросил дубль и остаётся в тюрьме, попыток ${p.jail}`;log(status);render();await wait(700);
   return false;
 }
-async function turn(){
-  try{
-    if(over)return;
-    busy=true;actions=[];tradeMsg='';
-    const p=players[cur];
-    if(p.jail>0){
-      const out=await jailTurn(p);
-      if(!out){settleAll();render();await wait(600);return nextTurn()}
-    }
-    let dbl=0;
-    while(true){
-      for(let x=0;x<6;x++){dice=[1+Math.random()*6|0,1+Math.random()*6|0];status=`${p.name} бросает кубики`;sfx.roll();renderCenter();await wait(60)}
-      const isD=dice[0]===dice[1];if(isD)dbl++;
-      if(dbl===3){p.pos=JAIL;p.jail=3;status=`${p.name}: третий дубль подряд, отправляется в тюрьму`;log(status);sfx.pay();render();await wait(800);break}
-      const steps=dice[0]+dice[1];
-      status=`${p.name}: выпало ${steps}${isD?', дубль':''}`;renderCenter();
-      await move(p,steps);
-      await land(p);
-      settleAll();render();
-      if(!p.alive||gameEnded())break;
-      if(p.extra>0&&!p.jail){p.extra--;status=`${p.name}: карточка «Лишний бросок»`;log(status);render();await wait(600);dbl=0;continue}
-      if(!isD||p.jail)break;
-      if(p.bot){status=`${p.name}: дубль, бросает ещё раз`;render();await wait(700)}
-      else await ask('Дубль! Бросайте ещё раз.',[['Бросить ещё раз',1]],true);
-    }
-    if(p.alive&&p.bot&&!gameEnded()){botUseCards(p);await botOffer(p);await botBotTrade(p);botManage(p);render()}
-    await wait(p.bot?600:300);
-    nextTurn();
-  }catch(e){if(e!==STALE)throw e}
-}
-function nextTurn(){
-  if(gameEnded())return endGame();
-  do{cur=(cur+1)%players.length;if(cur===0)round++}while(!players[cur].alive);
-  if(players[cur].bot){busy=true;actions=[];render();const g=gen;setTimeout(()=>{if(g===gen)turn()},400*SPEED[settings.speed])}
-  else humanIdle();
+async function turn(p){
+  if(over)return;
+  busy=true;actions=[];idleCtx=null;tradeMsg='';
+  if(p.jail>0){
+    const out=await jailTurn(p);
+    if(!out){settleAll();render();await wait(600);return}
+  }
+  let dbl=0;
+  while(true){
+    const steps=await rollDice(p,`${p.name} бросает кубики`);
+    const isD=dice[0]===dice[1];if(isD)dbl++;
+    if(dbl===3){p.pos=JAIL;p.jail=3;status=`${p.name}: третий дубль подряд, отправляется в тюрьму`;log(status);sfx.pay();render();await wait(800);break}
+    status=`${p.name}: выпало ${steps}${isD?', дубль':''}`;renderCenter();
+    await move(p,steps);
+    await land(p);
+    settleAll();render();
+    if(!p.alive||gameEnded())break;
+    if(p.extra>0&&!p.jail){p.extra--;status=`${p.name}: карточка «Лишний бросок»`;log(status);render();await wait(600);dbl=0;continue}
+    if(!isD||p.jail)break;
+    if(p.bot){status=`${p.name}: дубль, бросает ещё раз`;render();await wait(700)}
+    else await evAsk(p.id,'Дубль! Бросайте ещё раз.',[['Бросить ещё раз',1]],true);
+  }
+  if(p.alive&&p.bot&&!gameEnded()){botUseCards(p);await botOffer(p);await botBotTrade(p);botManage(p);render()}
+  await wait(p.bot?600:300);
 }
 function endGame(){
-  over=true;busy=false;actions=[];clearSave();guardClosing(false);
-  const win=players[0].alive;log(win?'Победа! Все боты разорены.':'Вы разорились.');
+  over=true;busy=false;actions=[];idleCtx=null;clearSave();guardClosing(false);
+  const alive=players.filter(p=>p.alive);
+  const win=players[mySeat].alive&&alive.length<=1;
+  log(win?'Победа! Соперники разорены.':players[mySeat].alive?`Партия окончена, победил ${alive[0]?alive[0].name:'никто'}.`:'Вы разорились.');
   if(win)sfx.win();render();showEnd();
 }
 async function land(p){
@@ -977,8 +1190,8 @@ async function land(p){
       else if(p.money>=buyPrice(p.id,c.price)){
         setSel(i);
         const pr=buyPrice(p.id,c.price),disc=pr<c.price?` (Банк: вместо ${c.price})`:'';
-        const txt=c.type==='obj'?`${label(i)} свободен. Купить за ${pr}${disc}? Даёт: ${c.desc(0)}. Если откажетесь, объект уйдёт на аукцион.`:`${c.name} свободна. Купить за ${pr}${disc}? Если откажетесь, улица уйдёт на аукцион.`;
-        buy=await ask(txt,[['Купить за '+pr,true],['На аукцион',false]]);
+        const txt=c.type==='obj'?`${label(i)} свободен. Купить за ${pr}${disc}? Даёт: ${c.desc(0)}. При отказе объект уйдёт на аукцион.`:`${c.name} свободна. Купить за ${pr}${disc}? При отказе улица уйдёт на аукцион.`;
+        buy=await evAsk(p.id,txt,[['Купить за '+pr,true],['На аукцион',false]]);
       }
       if(buy){let cost=buyPrice(p.id,c.price);if(p.discount){p.discount=false;const ci=p.cards.indexOf('discount');if(ci>=0)p.cards.splice(ci,1);cost=Math.round(cost*.7);log(`${p.name} применяет карточку «Скидка»`)}p.money-=cost;owner[i]=p.id;p.st.bought++;status=`${p.name} покупает ${label(i)} за ${cost}`;log(status);sfx.buy();render();await wait(500)}
       else await auction(i,p);
@@ -987,11 +1200,11 @@ async function land(p){
       else{const r=payRent(p,i);status=c.type==='obj'?`${p.name} платит ${players[o].name} сбор ${r} за ${label(i)}`:`${p.name} платит ${players[o].name} аренду ${r}`;log(status);sfx.pay()}
     } else status=`${p.name} на своей клетке: ${label(i)}`;
   } else if(c.type==='chance'){
-    if(Math.random()<.45){
-      const k=CARD_KEYS[Math.random()*CARD_KEYS.length|0];p.cards.push(k);
+    if(rnd()<.45){
+      const k=pick(CARD_KEYS);p.cards.push(k);
       status=`${p.name} получает карточку «${CARDS[k].n}»`;log(status);sfx.chance();render();await wait(900);return render();
     }
-    const card=CHANCE[Math.random()*CHANCE.length|0];
+    const card=pick(CHANCE);
     status=`${p.name}, Шанс: ${card.t}`;log(status);sfx.chance();render();await wait(900);
     await card.fn(p);
   } else if(c.type==='tax'){if(p.shield){p.shield=false;status=`${p.name} гасит налог карточкой «Щит»`}else{p.money-=c.amount;status=`${p.name} платит налог ${c.amount}`;sfx.pay()}log(status)}
@@ -1008,7 +1221,7 @@ async function auction(i,starter){
   let bid=0,high=null;
   const title=()=>`Аукцион: ${label(i)}, цена ${c.price}. ${high?`Ставка ${bid}, лидирует ${high.name}.`:'Ставок пока нет.'}`;
   log(`${label(i)} уходит на аукцион`);
-  if(c.type==='obj'&&!order.some(q=>q.id===0))log('Вы не участвуете: объект в центре у вас уже есть');
+  if(c.type==='obj'&&!order.some(q=>q.id===mySeat))log('Вы не участвуете: объект в центре у вас уже есть');
   setSel(i);status=title();render();await wait(500);
   while(active.size&&!(high&&active.size===1)){
     for(const q of order){
@@ -1016,8 +1229,8 @@ async function auction(i,starter){
       if(high&&active.size===1)break;
       const next=bid+10;let nb=0;
       if(q.money<next)nb=0;
-      else if(q.bot){const mx=botMaxBid(q,i);if(next<=mx)nb=Math.min(mx,bid+[10,10,20,30][Math.random()*4|0])}
-      else nb=await ask(`${title()} Ваша ставка:`,[[`${next}`,next],...(q.money>=bid+50?[[`${bid+50}`,bid+50,true]]:[]),...(q.money>=bid+100?[[`${bid+100}`,bid+100,true]]:[]),['Пас',0,true]]);
+      else if(q.bot){const mx=botMaxBid(q,i);if(next<=mx)nb=Math.min(mx,bid+pick([10,10,20,30]))}
+      else nb=await evAsk(q.id,`${title()} Ставка:`,[[`${next}`,next],...(q.money>=bid+50?[[`${bid+50}`,bid+50,true]]:[]),...(q.money>=bid+100?[[`${bid+100}`,bid+100,true]]:[]),['Пас',0,true]]);
       if(nb>=next){bid=nb;high=q;status=title();sfx.step()}
       else{active.delete(q.id);status=`${q.name} пасует. ${title()}`}
       render();if(q.bot)await wait(400);
@@ -1029,32 +1242,37 @@ async function auction(i,starter){
 }
 
 /* ---------- боты ---------- */
+/* Бот смотрит на «соперников вообще», а не на игрока с нулевым местом: в сетевой партии
+   людей несколько, и любая привязка к mySeat развалила бы одинаковость расчёта. */
+const rivalIn=(p,g)=>players.some(q=>q!==p&&q.alive&&countIn(q.id,g)>0);
+const rivalNear=(p,g)=>players.some(q=>q!==p&&q.alive&&countIn(q.id,g)===gsize(g)-1);
 function botBuy(p,i){
   const c=CELLS[i],left=p.money-buyPrice(p.id,c.price);
   if(left<0)return false;
   if(c.type==='obj'&&objOwned(p.id)>0)return false;
-  if(D()<0)return Math.random()<.6&&left>=30;
+  if(D()<0)return rnd()<.6&&left>=30;
   if(c.type==='obj')return D()>0?left>=40:left>=p.risk*.6;
   if(countIn(p.id,c.g)>0&&left>=40)return true;
-  if(D()>0&&countIn(0,c.g)>=1&&left>=40)return true;
+  if(D()>0&&rivalIn(p,c.g)&&left>=40)return true;
   return left>=p.risk;
 }
 function botMaxBid(p,i){
   const c=CELLS[i];
-  let m=D()<0?.5+Math.random()*.6:D()>0?1.05:.85;
+  let m=D()<0?.5+rnd()*.6:D()>0?1.05:.85;
   if(c.type==='obj')m+=Math.min(.4,.05*PROPS.filter(j=>owner[j]===p.id).length);
-  else{m+=.45*countIn(p.id,c.g);if(countIn(0,c.g)===gsize(c.g)-1)m+=D()>0?.9:D()===0?.4:0}
+  else{m+=.45*countIn(p.id,c.g);if(rivalNear(p,c.g))m+=D()>0?.9:D()===0?.4:0}
   return Math.floor(Math.min(c.price*m,p.money-p.risk*.5)/10)*10;
 }
-function botWants(bot,i,buyer=0){
+function botWants(bot,i,buyer){
   const g=CELLS[i].g,sz=gsize(g),mine=countIn(bot.id,g);let need=1.4;
   if(mine===sz)need=3.2;else if(mine===sz-1&&sz>2)need=2.3;
-  if(countIn(buyer,g)===sz-1)need+=buyer===0?(D()>0?1.2:D()===0?.6:0):.3;
+  // живому сопернику отдавать опаснее, чем другому боту, — за такую улицу бот просит дороже
+  if(countIn(buyer,g)===sz-1)need+=players[buyer].bot?.3:(D()>0?1.2:D()===0?.6:0);
   if(bot.money<150)need-=.5;
   if(D()<0)need-=.3;
   return need;
 }
-function giveValue(bot,i,buyer=0){
+function giveValue(bot,i,buyer){
   const c=CELLS[i];let mult;
   if(c.type==='obj'){mult=1.8+.06*streetsOf(bot.id)+(D()>0?.3:D()<0?-.3:0);if(bot.money<150)mult-=.4}
   else mult=botWants(bot,i,buyer);
@@ -1067,46 +1285,63 @@ function gainValue(bot,j){
 }
 function botGain(bot,j){const g=CELLS[j].g,n=countIn(bot.id,g);return(n===gsize(g)-1?2.4:1+.5*n)+(D()<0?.3:0)}
 function offerTrade(i,j,cash){
-  if(!idle())return;
-  const bot=players[owner[i]],me=players[0],c=CELLS[i];
+  if(!idleCtx)return;
+  const o=owner[i];if(o<0||o===mySeat)return;
+  const bot=players[o],me=players[mySeat];
   if(cash>me.money){tradeMsg='У вас нет столько денег.';return render()}
   if(cash<0&&bot.money<-cash){tradeMsg=`У ${bot.name} нет ${-cash}.`;return render()}
-  if(!tradeAllowed(0,i,j)){tradeMsg=`У вас уже есть объект в центре — ${label(myObj(0))}. Взять второй нельзя: отдайте свой объект в этой же сделке.`;return render()}
-  if(!tradeAllowed(bot.id,j,i)){tradeMsg=`У ${bot.name} уже есть объект в центре, второй он не возьмёт.`;return render()}
-  const give=giveValue(bot,i);
+  if(!tradeAllowed(mySeat,i,j)){tradeMsg=`У вас уже есть объект в центре — ${label(myObj(mySeat))}. Взять второй нельзя: отдайте свой объект в этой же сделке.`;return render()}
+  if(!tradeAllowed(o,j,i)){tradeMsg=`У ${bot.name} уже есть объект в центре, второй он не возьмёт.`;return render()}
+  idleCtx.send({k:'trade',i,j,cash});
+}
+/* Сделку считают все клиенты одинаково: бот сравнивает свою оценку отдаваемого с полученным.
+   Меняться можно только с ботом — обмен между живыми игроками требует встречного
+   согласия и отдельного протокола, в этой версии его нет. */
+function applyTrade(p,i,j,cash){
+  const o=owner[i];
+  if(o<0||o===p.id||!players[o].alive||!players[o].bot||mort[i])return;
+  const bot=players[o];
+  if(cash>p.money||(cash<0&&bot.money<-cash))return;
+  if(j>=0&&(owner[j]!==p.id||mort[j]))return;
+  if(!tradeAllowed(p.id,i,j)||!tradeAllowed(o,j,i))return;
+  const give=giveValue(bot,i,p.id);
   const gain=(j>=0?gainValue(bot,j):0)+cash;
   if(gain>=give){
-    me.money-=cash;bot.money+=cash;owner[i]=0;if(j>=0)owner[j]=bot.id;
-    const parts=[];if(j>=0)parts.push(`отдали ${label(j)}`);if(cash>0)parts.push(`заплатили ${cash}`);if(cash<0)parts.push(`получили ${-cash}`);
-    log(`Сделка с ${bot.name}: ${label(i)} теперь у вас${parts.length?', вы '+parts.join(' и '):''}`);
-    tradeMsg='';sfx.buy();
+    p.money-=cash;bot.money+=cash;owner[i]=p.id;if(j>=0)owner[j]=o;
+    const price=[];if(j>=0)price.push(label(j));if(cash>0)price.push(String(cash));
+    log(`${bot.name} продаёт ${p.name} ${acc(i)}${price.length?' за '+price.join(' и '):''}${cash<0?`, доплачивает ${-cash}`:''}`);
+    if(isMe(p.id))tradeMsg='';
+    sfx.buy();
   } else {
     lastAsk[i]=round;
-    tradeMsg=gain>=give*.8?'Бот почти согласился, но хочет немного больше.':'Бот считает предложение слишком низким.';
+    if(isMe(p.id))tradeMsg=gain>=give*.8?'Бот почти согласился, но хочет немного больше.':'Бот считает предложение слишком низким.';
     log(`${bot.name} отказался от сделки по ${label(i)}`);
   }
-  humanIdle();
 }
+// бот торгуется с любым живым игроком, а не только с местом 0: за столом их может быть несколько
+const humanOwner=i=>{const o=owner[i];return o>=0&&players[o].alive&&!players[o].bot?o:-1};
 async function botOffer(p){
   if(streetsOf(p.id)>=4&&objOwned(p.id)===0){
     for(const i of OBJS){
-      if(owner[i]!==0||mort[i])continue;
+      const t=humanOwner(i);
+      if(t<0||mort[i])continue;
       const key='o'+i;if((botCool[key]??-9)>round-5)continue;
       const a=r10(CELLS[i].price*(1.6+.05*streetsOf(p.id))+level[i]*upVal(i)*1.2);
       if(p.money-a<p.risk+100)continue;
       botCool[key]=round;setSel(i);
-      const yes=await ask(`${p.name} хочет купить у вас ${acc(i)}${level[i]?` с улучшениями`:''} за ${a}.`,[['Продать за '+a,true],['Оставить себе',false]]);
-      if(yes){owner[i]=p.id;p.money-=a;players[0].money+=a;log(`Вы продали ${label(i)} боту ${p.name} за ${a}`);sfx.buy()}
-      else log(`Вы отказали ${p.name} в продаже ${label(i)}`);
+      const yes=await evAsk(t,`${p.name} хочет купить у вас ${acc(i)}${level[i]?` с улучшениями`:''} за ${a}.`,[['Продать за '+a,true],['Оставить себе',false]]);
+      if(yes){owner[i]=p.id;p.money-=a;players[t].money+=a;log(`${players[t].name} продаёт ${p.name} ${acc(i)} за ${a}`);sfx.buy()}
+      else log(`${players[t].name} отказал ${p.name} в продаже ${label(i)}`);
       render();return;
     }
   }
   for(const i of PROPS){
-    if(owner[i]!==0||!tradable(i))continue;
+    const t=humanOwner(i);
+    if(t<0||!tradable(i))continue;
     const g=CELLS[i].g;
     if(countIn(p.id,g)!==gsize(g)-1)continue;
     if((botCool[i]??-9)>round-3)continue;
-    const swap=PROPS.find(k=>owner[k]===p.id&&CELLS[k].g!==g&&tradable(k)&&countIn(0,CELLS[k].g)===gsize(CELLS[k].g)-1);
+    const swap=PROPS.find(k=>owner[k]===p.id&&CELLS[k].g!==g&&tradable(k)&&countIn(t,CELLS[k].g)===gsize(CELLS[k].g)-1);
     let text,deal;
     if(swap!==undefined){text=`${p.name} предлагает обмен: ваша ${CELLS[i].name} на его ${CELLS[swap].name}. Кварталы соберёте оба.`;deal={k:swap,cash:0}}
     else{
@@ -1115,9 +1350,9 @@ async function botOffer(p){
       text=`${p.name} хочет купить у вас ${CELLS[i].name}${level[i]?' с улучшениями':''} за ${a}. Это соберёт ему квартал.`;deal={k:-1,cash:a};
     }
     botCool[i]=round;setSel(i);
-    const yes=await ask(text,[['Согласиться',true],['Отказать',false]]);
-    if(yes){owner[i]=p.id;if(deal.k>=0)owner[deal.k]=0;p.money-=deal.cash;players[0].money+=deal.cash;log(`Сделка с ${p.name}: ${CELLS[i].name} уходит боту`);sfx.buy()}
-    else log(`Вы отказали ${p.name} в сделке`);
+    const yes=await evAsk(t,text,[['Согласиться',true],['Отказать',false]]);
+    if(yes){owner[i]=p.id;if(deal.k>=0)owner[deal.k]=t;p.money-=deal.cash;players[t].money+=deal.cash;log(`Сделка с ${p.name}: ${CELLS[i].name} уходит боту ${p.name}`);sfx.buy()}
+    else log(`${players[t].name} отказал ${p.name} в сделке`);
     render();return;
   }
 }
@@ -1162,10 +1397,10 @@ function botUseCards(p){
     const opts=owned(p.id).filter(i=>canUpgrade(p.id,i));
     if(opts.length&&take('repair')){const i=opts[0];level[i]++;log(`${p.name} бесплатно улучшает ${acc(i)}`)}
   }
-  if(p.cards.includes('boost')&&PROPS.filter(i=>owner[i]===p.id).length>=3&&Math.random()<.6&&take('boost'))p.boost=true;
+  if(p.cards.includes('boost')&&PROPS.filter(i=>owner[i]===p.id).length>=3&&rnd()<.6&&take('boost'))p.boost=true;
   if(p.cards.includes('shield')&&p.money<300&&take('shield'))p.shield=true;
   if(p.cards.includes('discount')&&p.money>=200)p.discount=true;
-  if(p.cards.includes('extra')&&Math.random()<.5&&take('extra'))p.extra++;
+  if(p.cards.includes('extra')&&rnd()<.5&&take('extra'))p.extra++;
 }
 function botManage(p){
   let did=true;
@@ -1175,7 +1410,7 @@ function botManage(p){
       if(p.money-unmortCost(i)>=p.risk+150){p.money-=unmortCost(i);mort[i]=false;log(`${p.name} выкупает ${acc(i)} из залога`);did=true;break}
     }
     if(did)continue;
-    if(D()<0&&Math.random()<.5)break;
+    if(D()<0&&rnd()<.5)break;
     const reserve=D()>0?p.risk+60:p.risk+100;
     for(const i of PROPS.filter(i=>canUpgrade(p.id,i)).sort((a,b)=>level[a]-level[b])){
       if(p.money-upCost(i)>=reserve){p.money-=upCost(i);level[i]++;log(`${p.name} улучшает ${acc(i)}`);did=true;break}
@@ -1185,6 +1420,114 @@ function botManage(p){
       if(p.money-upCost(i)>=reserve+80){p.money-=upCost(i);level[i]++;log(`${p.name} улучшает ${acc(i)} до уровня ${level[i]+1}`);did=true;break}
     }
   }
+}
+
+/* ---------- сетевая партия ---------- */
+/* Сервер комнат живёт на своём домене — статика может лежать где угодно, хоть на Pages.
+   Адрес переопределяется через ?ws=… , это нужно для проверки на локальной машине. */
+const QS=new URLSearchParams(location.search);
+const WS_URL=QS.get('ws')||'wss://telegramparser.duckdns.org/kvartaly';
+const UIDKEY='kvartaly-uid';
+function myUid(){
+  let u=null;try{u=localStorage.getItem(UIDKEY)}catch(e){}
+  if(!u){u=Math.random().toString(36).slice(2)+Date.now().toString(36);try{localStorage.setItem(UIDKEY,u)}catch(e){}}
+  return u;
+}
+function myName(){
+  try{const u=TG&&TG.initDataUnsafe&&TG.initDataUnsafe.user;if(u&&u.first_name)return String(u.first_name).slice(0,24)}catch(e){}
+  return 'Игрок';
+}
+const mpSend=m=>{try{if(mp.ws&&mp.ws.readyState===1)mp.ws.send(JSON.stringify(m))}catch(e){}};
+function mpConnect(code){
+  mp.want=code||'';
+  const prev=mp.ws;mp.ws=null;try{prev&&prev.close()}catch(e){}
+  let ws;
+  try{ws=new WebSocket(WS_URL)}catch(e){return mpFail('Не удалось открыть соединение.')}
+  mp.ws=ws;net.mode='ws';net.send=ev=>mpSend({t:'intent',...ev});
+  if(!MP)overlay('<h2 class="ot">Подключаюсь…</h2><p class="mut">Ищу комнату на сервере.</p>',false);
+  ws.onopen=()=>{
+    mp.tries=0;
+    mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),initData:(inTG&&TG.initData)||''});
+    if(MP)mpSend({t:'sync',have:evLog.length});   // вернулись в идущую партию — доберём пропущенное
+  };
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}mpMsg(m)};
+  ws.onclose=()=>{
+    if(mp.ws!==ws)return;
+    mp.tries++;
+    if(MP){status='Связь потеряна, переподключаюсь…';render()}
+    else if(mp.tries>3)return mpFail('Сервер комнат не отвечает.');
+    setTimeout(()=>{if(mp.ws===ws)mpConnect(mp.want)},Math.min(8000,500*Math.pow(2,Math.min(4,mp.tries))));
+  };
+}
+function mpFail(text){
+  net.mode='local';
+  overlay(`<h2 class="ot">Не получилось</h2><p>${text}</p>
+    <div class="actions"><button class="btn" id="eNew">Играть с ботами</button></div>`,false);
+  $('eNew').onclick=showSetup;
+}
+function mpMsg(m){
+  if(m.t==='lobby'){
+    mp.code=m.code;mp.want=m.code;mp.members=m.members||[];mp.host=m.host;mp.you=m.you;mp.bots=m.bots;mp.diff=m.diff;
+    if(!MP&&!mp.pending)showLobby();
+    return;
+  }
+  if(m.t==='presence'){mp.absent=new Set(m.absent||[]);return}
+  if(m.t==='start'){mp.pending=m;return}          // саму партию запускаем, когда приедет журнал
+  if(m.t==='log'){mpRun(m.evs||[]);return}
+  if(m.t==='ev'){if(MP&&m.ev)evApply(m.ev);return}
+  if(m.t==='err'){
+    mpFail(m.code==='full'?'В комнате уже четверо.':m.code==='started'?'Партия в этой комнате уже идёт.':'Комната недоступна.');
+    return;
+  }
+}
+/* Старт партии и журнал приходят парой: сначала раздача мест, потом всё, что уже сыграно.
+   Пустой журнал — значит партия только началась; непустой — мы вернулись и надо перемотать. */
+function mpRun(evs){
+  const m=mp.pending;if(!m)return;
+  mp.pending=null;
+  if(!Number.isInteger(m.you)||m.you<0)return mpFail('Ваше место за столом не найдено.');
+  MP=true;mySeat=m.you;net.mode='ws';
+  const seats=m.seats.map((s,i)=>({name:i===m.you?'Вы':s.name,bot:s.bot}));
+  resetTable(seats,m.seed,m.diff);
+  evLog=evs.slice();
+  replaying=evLog.length>0;
+  guardClosing(true);hideOverlay();
+  if(!replaying)log(`Партия началась, за столом ${seats.length}. У каждого по 1500.`);
+  runGame();
+}
+function mseg(lbl,key,opts,cur){
+  return `<div class="seg-wrap"><div class="lbl">${lbl}</div><div class="seg">${opts.map(([v,t])=>
+    `<button data-mk="${key}" data-mv="${v}" aria-pressed="${String(cur)===String(v)}">${t}</button>`).join('')}</div></div>`;
+}
+function showLobby(){
+  const isHost=!!mp.you&&mp.host===mp.you;
+  const free=Math.max(0,4-mp.members.length);
+  const bots=Math.min(mp.bots,free);
+  const total=mp.members.length+bots;
+  const link=location.origin+location.pathname+'?room='+mp.code;
+  const rows=mp.members.map((x,i)=>`<tr><td><span class="dot" style="background:${COLORS[i]}"></span>${x.name}${x.uid===mp.host?' · хозяин':''}${x.uid===mp.you?' · вы':''}</td><td>${x.online?'в комнате':'отошёл'}</td></tr>`).join('')
+    +Array.from({length:bots},(_,i)=>`<tr><td><span class="dot" style="background:${COLORS[mp.members.length+i]}"></span>${['Сова','Ёж','Кот'][i]}</td><td>бот</td></tr>`).join('');
+  overlay(`<h2 class="ot">Комната ${mp.code}</h2>
+    <p class="mut">Отправьте ссылку друзьям — они сядут за этот же стол. Свободные места можно добить ботами.</p>
+    <div class="actions"><button class="btn" id="lCopy">Скопировать ссылку</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>За столом</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${isHost?mseg('Добить ботами','bots',[[0,'без ботов'],[1,'1'],[2,'2'],[3,'3']],mp.bots):''}
+    ${isHost?mseg('Сложность ботов','diff',[['easy','Лёгкие'],['normal','Обычные'],['hard','Сложные']],mp.diff):''}
+    <div class="actions">
+      ${isHost?`<button class="btn" id="lGo" ${total<2?'disabled':''}>Начать партию</button>`:'<span class="mut">Ждём хозяина комнаты.</span>'}
+      <button class="btn ghost" id="lExit">Выйти</button></div>
+    ${isHost&&total<2?'<p class="mut">Нужно хотя бы двое: позовите друга или добавьте бота.</p>':''}`,false);
+  $('card').querySelectorAll('[data-mk]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.mk;
+    mpSend({t:'config',[k]:k==='bots'?+b.dataset.mv:b.dataset.mv});
+  });
+  $('lCopy').onclick=()=>{
+    const done=()=>{$('lCopy').textContent='Ссылка скопирована';hap('success')};
+    try{navigator.clipboard.writeText(link).then(done,()=>prompt('Ссылка для друга:',link))}
+    catch(e){prompt('Ссылка для друга:',link)}
+  };
+  if($('lGo'))$('lGo').onclick=()=>mpSend({t:'start'});
+  $('lExit').onclick=()=>{const w=mp.ws;mp.ws=null;try{w&&w.close()}catch(e){}net.mode='local';showSetup()};
 }
 
 /* ---------- Telegram: тема, высота, жесты ---------- */
@@ -1226,9 +1569,20 @@ if(inTG)$('hapBtn').hidden=false;
 try{localStorage.removeItem('kvartaly-eight-v1')}catch(e){}   // сохранёнки со старой геометрией поля
 cloudDrop('kvartaly-eight-v1');
 initTG();
-buildBoard();setPane(pane);render();showSetup();
-// облачная сохранёнка приходит асинхронно — если партия ещё не начата, перерисуем экран настроек
-cloudLoad(()=>{renderTools();if(!players.length&&!$('overlay').hidden)showSetup()});
+buildBoard();setPane(pane);render();
+/* Приглашение приходит двумя способами: ?room=CODE в обычной ссылке и startapp=CODE
+   в диплинке Telegram. И то и другое ведёт сразу в комнату, минуя экран настроек. */
+const joinCode=(()=>{
+  const q=QS.get('room');if(q)return q;
+  try{const sp=TG&&TG.initDataUnsafe&&TG.initDataUnsafe.start_param;if(sp)return String(sp)}catch(e){}
+  return '';
+})().toUpperCase().replace(/[^A-F0-9]/g,'').slice(0,6);
+if(joinCode)mpConnect(joinCode);
+else{
+  showSetup();
+  // облачная сохранёнка приходит асинхронно — если партия ещё не начата, перерисуем экран настроек
+  cloudLoad(()=>{renderTools();if(!players.length&&!$('overlay').hidden)showSetup()});
+}
 </script>
 </body>
 </html>
