@@ -310,7 +310,7 @@ let rndS=1;
 function rnd(){rndS=rndS+0x6D2B79F5|0;let t=Math.imul(rndS^rndS>>>15,1|rndS);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}
 const pick=a=>a[rnd()*a.length|0];
 // v2 — поле 7×5 с тремя объектами; сохранёнки со старой геометрией несовместимы
-const BUILD='2026-09-21.3';   // подставляется при выкатке, видно на экране новой партии
+const BUILD='2026-09-21.5';   // подставляется при выкатке, видно на экране новой партии
 const SKEY='kvartaly-eight-v2',PKEY='kvartaly-prefs',PANEKEY='kvartaly-pane';
 let settings={speed:'normal',sound:true,haptic:true,diff:'normal',bots:2};
 try{Object.assign(settings,JSON.parse(localStorage.getItem(PKEY))||{})}catch(e){}
@@ -423,7 +423,7 @@ function stateHash(){
   let h=7;
   const add=s=>{const t=String(s);for(let i=0;i<t.length;i++)h=(Math.imul(h,31)+t.charCodeAt(i))|0};
   add(cur);add(round);add(rndS);
-  players.forEach(p=>{add(p.pos);add(p.money);add(p.jail);add(p.alive?1:0);add(p.cards.join('.'));add(p.extra)});
+  players.forEach(p=>{add(p.pos);add(p.money);add(p.jail);add(p.alive?1:0);add(p.cards.join('.'));add(p.extra);add(p.bot?1:0)});
   owner.forEach(add);level.forEach(add);mort.forEach(m=>add(m?1:0));
   return h>>>0;
 }
@@ -511,7 +511,8 @@ const VERB={платит:'платите',проходит:'проходите',
   улучшает:'улучшаете',получает:'получаете',применяет:'применяете',удваивает:'удваиваете',гасит:'гасите',понижает:'понижаете',
   выбрасывает:'выбрасываете',выходит:'выходите',остаётся:'остаётесь',отсидел:'отсидели',выбросил:'выбросили',
   заплатил:'заплатили',выкупает:'выкупаете',хотел:'хотели',продал:'продали',купил:'купили',
-  доводит:'доводите',отказал:'отказали',отказался:'отказались',отдаёт:'отдаёте'};
+  доводит:'доводите',отказал:'отказали',отказался:'отказались',отдаёт:'отдаёте',
+  вернулся:'вернулись',отошёл:'отошли'};
 const CASES={'Сова':['Сове','Совой','Совы'],'Ёж':['Ежу','Ежом','Ежа'],'Кот':['Коту','Котом','Кота']};
 /* Склонять умеем только имена ботов. За столом с живыми игроками их имена приходят
    из Telegram — такие оставляем как есть, поэтому список для регекспа собираем по столу. */
@@ -659,7 +660,7 @@ function renderPlayers(){
   if(replaying)return;
   $('players').innerHTML=players.length?players.map(p=>`<div class="pl ${p.alive?'':'out'} ${p.id===cur&&!over?'cur':''}">
     <span class="dot" style="background:${COLORS[p.id]}"></span>
-    <div class="pmain"><div class="prow"><span class="name">${p.name}${p.jail?', в тюрьме':''}</span><span class="money">${p.money}</span></div>
+    <div class="pmain"><div class="prow"><span class="name">${p.name}${p.away?' · бот':''}${p.jail?', в тюрьме':''}</span><span class="money">${p.money}</span></div>
     <div class="hold">${GROUPS.map(g=>`<span class="grp" title="Квартал «${GNAME[g]}»">${inGroup(g).map(i=>owner[i]===p.id?`<i style="background:${GROUP[g]};border-color:${GROUP[g]};${mort[i]?'opacity:.4':''}"></i>`:'<i></i>').join('')}</span>`).join('')}
     <span class="objs">${OBJS.map(i=>`<span class="${owner[i]===p.id?'on':''}" title="${CELLS[i].name}">${CELLS[i].name[0]}</span>`).join('')}</span>${p.cards.length?`<span class="cardcount" title="Бонусные карточки">🃏 ${p.cards.length}</span>`:''}${p.shield?'<span title="Щит">🛡</span>':''}${p.boost?'<span title="Двойная аренда">×2</span>':''}</div></div></div>`).join('')
     :'<p class="mut">Игра ещё не началась.</p>';
@@ -892,7 +893,7 @@ function showEnd(){
    В одиночной партии место одно — моё, остальные боты; в сетевой места раздаёт сервер. */
 function resetTable(seats,seed,d){
   gen++;evReset();rndS=seed|0;diff=d;
-  players=seats.map((s,i)=>({id:i,name:s.name,money:1500,pos:0,jail:0,alive:true,bot:!!s.bot,risk:RISK[i],
+  players=seats.map((s,i)=>({id:i,name:s.name,money:1500,pos:0,jail:0,alive:true,bot:!!s.bot,away:false,risk:RISK[i],
     cards:[],shield:false,boost:false,discount:false,extra:0,st:{rentIn:0,rentOut:0,bought:0}}));
   owner=CELLS.map(()=>-1);level=CELLS.map(()=>0);mort=CELLS.map(()=>false);cellRent=CELLS.map(()=>0);maxHit=null;
   cur=0;round=0;lastAsk={};botCool={};over=false;sel=-1;dice=[1,1];logs=[];
@@ -930,7 +931,9 @@ async function gameLoop(){
       if(gameEnded())return endGame();
       const p=players[cur];
       if(p.alive){
-        if(p.bot){busy=true;actions=[];idleCtx=null;status=`Ходит ${p.name}.`;render();await wait(400);await turn(p)}
+        /* Брошенное место (p.away) ведёт себя как бот, но фазу до броска проходит через
+           idlePhase — там остаётся событие, которым хозяин заберёт место обратно. */
+        if(p.bot&&!p.away){busy=true;actions=[];idleCtx=null;status=`Ходит ${p.name}.`;render();await wait(400);await turn(p)}
         else{
           const a=await idlePhase(p);
           if(a.k==='teleport')await doTeleport(p,a.i);
@@ -950,7 +953,12 @@ async function idlePhase(p){
   while(true){
     const seq=evCur;
     renderIdle(p,seq);
-    if(p.id!==mySeat&&mp.absent.has(p.id))evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}});
+    /* Передача места ИИ и возврат — обычные события в общем потоке. Иначе клиенты
+       переключились бы в разные моменты (сообщения о присутствии приходят вразнобой)
+       и партия бы разъехалась. */
+    if(mp.absent.has(p.id)&&!p.bot)evEmit({kind:'act',seat:p.id,seq,v:{k:'away'}});
+    else if(p.away&&!mp.absent.has(p.id)&&p.id===mySeat)evEmit({kind:'act',seat:p.id,seq,v:{k:'back'}});
+    else if(p.id!==mySeat&&mp.absent.has(p.id))evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}});
     const ev=await evStall(seq,p.id,()=>evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}}));
     const a=ev.v;
     if(a.k==='roll'||a.k==='teleport')return a;
@@ -962,7 +970,7 @@ function renderIdle(p,seq){
   busy=false;
   if(p.id!==mySeat){
     idleCtx=null;actions=[];
-    status=`Ходит ${p.name}${p.jail?', сидит в тюрьме':''}.`;
+    status=p.away?`За ${p.name} играет бот: игрок отошёл.`:`Ходит ${p.name}${p.jail?', сидит в тюрьме':''}.`;
     render();return;
   }
   const send=v=>{idleCtx=null;evEmit({kind:'act',seat:p.id,seq,v})};
@@ -1009,6 +1017,8 @@ async function applyIdle(p,a){
   if(!a||typeof a!=='object')return;
   const i=a.i;
   const okCell=x=>Number.isInteger(x)&&x>=0&&x<CELLS.length;
+  if(a.k==='away'){if(!p.bot){p.bot=true;p.away=true;log(`${p.name} отошёл, место доигрывает бот`)}return}
+  if(a.k==='back'){if(p.away){p.bot=false;p.away=false;log(`${p.name} вернулся за стол`)}return}
   if(a.k==='card'){if(CARDS[a.key]&&CARDS[a.key].target&&!okCell(i))return}
   else if(!okCell(i))return;
   if(a.k==='trade'&&!((a.j===-1||okCell(a.j))&&Number.isFinite(a.cash)))return;
@@ -1459,9 +1469,21 @@ function myUid(){
   if(!u){u=Math.random().toString(36).slice(2)+Date.now().toString(36);try{localStorage.setItem(UIDKEY,u)}catch(e){}}
   return u;
 }
-function myName(){
+const NAMEKEY='kvartaly-name';
+// имя из Telegram — только предложение по умолчанию; выбранное игроком имеет приоритет
+function tgName(){
   try{const u=TG&&TG.initDataUnsafe&&TG.initDataUnsafe.user;if(u&&u.first_name)return String(u.first_name).slice(0,24)}catch(e){}
-  return 'Игрок';
+  return '';
+}
+function cleanName(s){return String(s||'').replace(/\s+/g,' ').trim().slice(0,16)}
+function myName(){
+  let saved='';try{saved=localStorage.getItem(NAMEKEY)||''}catch(e){}
+  return cleanName(saved)||tgName()||'Игрок';
+}
+function setMyName(v){
+  const n=cleanName(v);
+  try{n?localStorage.setItem(NAMEKEY,n):localStorage.removeItem(NAMEKEY)}catch(e){}
+  mpSend({t:'name',name:myName()});
 }
 const mpSend=m=>{try{if(mp.ws&&mp.ws.readyState===1)mp.ws.send(JSON.stringify(m))}catch(e){}};
 function mpConnect(code){
@@ -1494,7 +1516,9 @@ function mpFail(text){
 function mpMsg(m){
   if(m.t==='lobby'){
     mp.code=m.code;mp.want=m.code;mp.members=m.members||[];mp.host=m.host;mp.you=m.you;mp.bots=m.bots;mp.diff=m.diff;
-    if(!MP&&!mp.pending)showLobby();
+    // пока игрок правит своё имя, лобби не перерисовываем — иначе поле теряет фокус под руками
+    const typing=document.activeElement&&document.activeElement.id==='lName';
+    if(!MP&&!mp.pending&&!typing)showLobby();
     return;
   }
   if(m.t==='presence'){mp.absent=new Set(m.absent||[]);return}
@@ -1540,6 +1564,7 @@ function showLobby(){
     +Array.from({length:bots},(_,i)=>`<tr><td><span class="dot" style="background:${COLORS[mp.members.length+i]}"></span>${['Сова','Ёж','Кот'][i]}</td><td>бот</td></tr>`).join('');
   overlay(`<h2 class="ot">Комната ${mp.code}</h2>
     <p class="mut">Отправьте ссылку друзьям — они сядут за этот же стол. Свободные места можно добить ботами.</p>
+    <label class="fld">Ваше имя за столом<input id="lName" type="text" maxlength="16" value="${myName().replace(/"/g,'&quot;')}"></label>
     <div class="actions">
       ${canShare?'<button class="btn" id="lShare">Позвать друга</button>':''}
       <button class="btn${canShare?' ghost':''}" id="lCopy">Скопировать ссылку</button>
@@ -1561,6 +1586,9 @@ function showLobby(){
     try{navigator.clipboard.writeText(text).then(done,()=>prompt('Ссылка для друга:',text))}
     catch(e){prompt('Ссылка для друга:',text)}
   };
+  // имя отправляем по потере фокуса, а не на каждую букву — иначе лобби перерисуется под курсором
+  $('lName').onchange=e=>setMyName(e.target.value);
+  $('lName').onblur=e=>setMyName(e.target.value);
   $('lCopy').onclick=()=>copy(tgLink,$('lCopy'),'Скопировано');
   $('lWeb').onclick=()=>copy(webLink,$('lWeb'),'Скопировано');
   if($('lShare'))$('lShare').onclick=()=>{
