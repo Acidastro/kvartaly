@@ -310,7 +310,7 @@ let rndS=1;
 function rnd(){rndS=rndS+0x6D2B79F5|0;let t=Math.imul(rndS^rndS>>>15,1|rndS);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}
 const pick=a=>a[rnd()*a.length|0];
 // v2 — поле 7×5 с тремя объектами; сохранёнки со старой геометрией несовместимы
-const BUILD='2026-09-21.1';   // подставляется при выкатке, видно на экране новой партии
+const BUILD='2026-09-21.2';   // подставляется при выкатке, видно на экране новой партии
 const SKEY='kvartaly-eight-v2',PKEY='kvartaly-prefs',PANEKEY='kvartaly-pane';
 let settings={speed:'normal',sound:true,haptic:true,diff:'normal',bots:2};
 try{Object.assign(settings,JSON.parse(localStorage.getItem(PKEY))||{})}catch(e){}
@@ -488,7 +488,7 @@ async function evDice(seat){
    она под броском кубиков, и рука жмёт её не глядя. Такие вопросы показываем блоком
    с текстом и равнозначными кнопками — `flow: true` оставляют только продолжения хода.
    Последняя кнопка списка обязана быть отказом: именно она подставится по таймауту. */
-async function evAsk(seat,text,btns,flow=false){
+async function evAsk(seat,text,btns,flow=false,watch=''){
   const seq=evCur;
   const def=btns[btns.length-1][1];
   if(seat===mySeat){
@@ -496,7 +496,8 @@ async function evAsk(seat,text,btns,flow=false){
     actions=btns.map(([l,val,gh])=>[l,()=>evEmit({kind:'act',seat,seq,v:val}),gh]);
     actions.flow=flow;actions.question=text;
   } else {
-    status=`${players[seat].name} решает: ${text}`;actions=[];
+    // текст вопроса написан от лица адресата («вы отдаёте…»); зрителям показываем нейтральный
+    status=`${players[seat].name} решает: ${watch||text}`;actions=[];
     // за того, кого нет на связи, отказ подставляем сразу — стол не должен ждать пустое место
     if(mp.absent.has(seat))evEmit({kind:'act',seat,seq,v:def});
   }
@@ -510,7 +511,7 @@ const VERB={платит:'платите',проходит:'проходите',
   улучшает:'улучшаете',получает:'получаете',применяет:'применяете',удваивает:'удваиваете',гасит:'гасите',понижает:'понижаете',
   выбрасывает:'выбрасываете',выходит:'выходите',остаётся:'остаётесь',отсидел:'отсидели',выбросил:'выбросили',
   заплатил:'заплатили',выкупает:'выкупаете',хотел:'хотели',продал:'продали',купил:'купили',
-  доводит:'доводите',отказал:'отказали',отказался:'отказались'};
+  доводит:'доводите',отказал:'отказали',отказался:'отказались',отдаёт:'отдаёте'};
 const CASES={'Сова':['Сове','Совой','Совы'],'Ёж':['Ежу','Ежом','Ежа'],'Кот':['Коту','Котом','Кота']};
 /* Склонять умеем только имена ботов. За столом с живыми игроками их имена приходят
    из Telegram — такие оставляем как есть, поэтому список для регекспа собираем по столу. */
@@ -664,17 +665,18 @@ function renderPlayers(){
     :'<p class="mut">Игра ещё не началась.</p>';
 }
 function tradeForm(){
-  const o=owner[sel],bot=players[o];let h='';
-  if(mort[sel])return `<p class="mut">Заложенные улицы боты не продают.</p>`;
-  if(!idle())return `<p class="mut">Сделки можно предлагать в свой ход до броска кубиков.</p>`;
-  if(lastAsk[sel]===round)return `<p class="mut">${bot.name} уже отказал в этом ходу. ${tradeMsg}</p>`;
+  const o=owner[sel],them=players[o];let h='';
+  if(mort[sel])return `<p class="mut">Заложенную улицу сначала должен выкупить владелец.</p>`;
+  if(!idle())return `<p class="mut">Сделки можно предлагать в свой ход до броска кубиков.</p>${tradeMsg?`<p>${tradeMsg}</p>`:''}`;
+  if(lastAsk[sel]===round)return `<p class="mut">${them.name} уже отказал в этом ходу. ${tradeMsg}</p>`;
   const mine=owned(mySeat).filter(tradable);
-  h+=`<p><b>Сделка с ${bot.name}</b></p>`;
+  h+=`<p><b>Сделка с ${them.name}</b></p>`;
+  h+=them.bot?'':`<p class="mut">Предложение уйдёт ${them.name}: игрок сам решит, принять его или отказать.</p>`;
   if(CELLS[sel].type==='obj'&&objOwned(mySeat)>0)h+=`<p class="mut">Объект в центре у вас уже есть (${label(myObj(mySeat))}), а больше одного держать нельзя. Обмен пройдёт, только если вы отдадите его.</p>`;
-  if(level[sel])h+=`<p class="mut">Здесь есть улучшения (${level[sel]}), они переходят вместе с клеткой, поэтому бот попросит больше.</p>`;
+  if(level[sel])h+=`<p class="mut">Здесь есть улучшения (${level[sel]}), они переходят вместе с клеткой.</p>`;
   h+=`<label class="fld">Отдать своё<select id="tSt"><option value="-1">ничего</option>${mine.map(j=>`<option value="${j}" ${draft.j==j?'selected':''}>${label(j)} (${CELLS[j].price}${level[j]?`, улучшений ${level[j]}`:''})</option>`).join('')}</select></label>
   <label class="fld">Доплатить деньгами<input id="tCash" type="number" step="10" value="${draft.cash}"></label>
-  <p class="mut">Отрицательная сумма значит, что доплачивает бот.</p>
+  <p class="mut">Отрицательная сумма значит, что доплачивает ${them.name}.</p>
   <div class="actions"><button class="btn" id="tGo">Предложить сделку</button></div>
   ${tradeMsg?`<p>${tradeMsg}</p>`:''}`;
   return h;
@@ -686,8 +688,8 @@ function renderInfo(){
     const hand=me&&me.cards.length?`<p><b>Ваши карточки</b></p>${[...new Set(me.cards)].map(k=>`<p>🃏 ${CARDS[k].n}${me.cards.filter(x=>x===k).length>1?' ×'+me.cards.filter(x=>x===k).length:''} — ${CARDS[k].d}</p>`).join('')}`:'';
     info.innerHTML='<p class="mut">Нажмите на клетку, чтобы посмотреть детали, заложить улицу, улучшить объект или предложить сделку.</p>'+hand;return}
   const c=CELLS[sel],o=owner[sel]??-1,me=players[mySeat];
-  // торговаться можно только с ботом: обмен между живыми игроками в этой версии не сделан
-  const dealable=o>=0&&o!==mySeat&&players[o]&&players[o].alive&&players[o].bot;
+  // меняться можно с кем угодно: бот отвечает формулой, живой игрок — сам
+  const dealable=o>=0&&o!==mySeat&&players[o]&&players[o].alive;
   if(c.type!=='prop'&&c.type!=='obj'){
     const d={start:'Проходя Старт, получаете 200.',chance:`Случайное событие или бонусная карточка, примерно поровну. Событие сразу даёт или отнимает деньги, перемещает фишку либо бесплатно улучшает клетку. Карточка остаётся у вас на руках, пока вы сами её не примените: ${Object.values(CARDS).map(c=>'«'+c.n+'»').join(', ')}.`,jail:`Попавшие сюда сидят до трёх ходов. Каждый ход можно бросить на дубль, заплатить выкуп ${BAIL} или использовать карточку «Освобождение». После третьей неудачи выкуп спишется автоматически.`,gojail:'Отправляет в тюрьму на один ход.',tax:`Заплатите ${c.amount}.`}[c.type];
     info.innerHTML=`<p><b>${c.name}</b></p><p>${d}</p>`;return;
@@ -952,7 +954,7 @@ async function idlePhase(p){
     const ev=await evStall(seq,p.id,()=>evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}}));
     const a=ev.v;
     if(a.k==='roll'||a.k==='teleport')return a;
-    applyIdle(p,a);
+    await applyIdle(p,a);
   }
 }
 let idleCtx=null;   // {p,seq,send} — живёт ровно пока идёт моя фаза до броска
@@ -1002,7 +1004,7 @@ function ownAction(a,i){
 }
 /* Применение действия фазы. Выполняется на ВСЕХ клиентах одинаково, поэтому здесь
    не должно быть ни одной проверки, завязанной на mySeat, — только правила. */
-function applyIdle(p,a){
+async function applyIdle(p,a){
   // значение приехало по сети — прежде чем считать по нему правила, проверяем форму
   if(!a||typeof a!=='object')return;
   const i=a.i;
@@ -1025,7 +1027,7 @@ function applyIdle(p,a){
     mort[i]=false;p.money-=unmortCost(i);log(`${p.name} выкупает ${acc(i)} из залога`);
   }
   else if(a.k==='card')applyCard(p,a.key,i);
-  else if(a.k==='trade')applyTrade(p,i,a.j,a.cash);
+  else if(a.k==='trade')return doTrade(p,i,a.j,a.cash);
   render();
 }
 function applyCard(p,key,i){
@@ -1286,37 +1288,59 @@ function gainValue(bot,j){
 function botGain(bot,j){const g=CELLS[j].g,n=countIn(bot.id,g);return(n===gsize(g)-1?2.4:1+.5*n)+(D()<0?.3:0)}
 function offerTrade(i,j,cash){
   if(!idleCtx)return;
-  const o=owner[i];if(o<0||o===mySeat)return;
-  const bot=players[o],me=players[mySeat];
+  const o=owner[i];if(o<0||o===mySeat||mort[i])return;
+  const them=players[o],me=players[mySeat];
   if(cash>me.money){tradeMsg='У вас нет столько денег.';return render()}
-  if(cash<0&&bot.money<-cash){tradeMsg=`У ${bot.name} нет ${-cash}.`;return render()}
+  if(cash<0&&them.money<-cash){tradeMsg=`У ${them.name} нет ${-cash}.`;return render()}
+  if(j>=0&&(owner[j]!==mySeat||mort[j])){tradeMsg='Эту клетку отдать нельзя.';return render()}
   if(!tradeAllowed(mySeat,i,j)){tradeMsg=`У вас уже есть объект в центре — ${label(myObj(mySeat))}. Взять второй нельзя: отдайте свой объект в этой же сделке.`;return render()}
-  if(!tradeAllowed(o,j,i)){tradeMsg=`У ${bot.name} уже есть объект в центре, второй он не возьмёт.`;return render()}
+  if(!tradeAllowed(o,j,i)){tradeMsg=`У ${them.name} уже есть объект в центре, второй он не возьмёт.`;return render()}
+  tradeMsg=them.bot?'':'Предложение отправлено, ждём ответа.';
   idleCtx.send({k:'trade',i,j,cash});
 }
-/* Сделку считают все клиенты одинаково: бот сравнивает свою оценку отдаваемого с полученным.
-   Меняться можно только с ботом — обмен между живыми игроками требует встречного
-   согласия и отдельного протокола, в этой версии его нет. */
-function applyTrade(p,i,j,cash){
+// что получает владелец клетки i в обмен на неё: своя клетка, деньги или и то и другое
+function tradeGets(j,cash){
+  const g=[];
+  if(j>=0)g.push(label(j));
+  if(cash>0)g.push(String(cash));
+  return g;
+}
+/* Сделка. С ботом ответ выводится формулой — он одинаков у всех клиентов, лишнего события
+   не нужно. С живым игроком ответ предсказать нельзя, поэтому он едет по сети отдельным
+   событием: предлагающий ждёт, остальные видят, кто сейчас решает. */
+async function doTrade(p,i,j,cash){
   const o=owner[i];
-  if(o<0||o===p.id||!players[o].alive||!players[o].bot||mort[i])return;
-  const bot=players[o];
-  if(cash>p.money||(cash<0&&bot.money<-cash))return;
+  if(o<0||o===p.id||!players[o]||!players[o].alive||mort[i])return;
+  const them=players[o];
+  if(cash>p.money||(cash<0&&them.money<-cash))return;
   if(j>=0&&(owner[j]!==p.id||mort[j]))return;
   if(!tradeAllowed(p.id,i,j)||!tradeAllowed(o,j,i))return;
-  const give=giveValue(bot,i,p.id);
-  const gain=(j>=0?gainValue(bot,j):0)+cash;
-  if(gain>=give){
-    p.money-=cash;bot.money+=cash;owner[i]=p.id;if(j>=0)owner[j]=o;
-    const price=[];if(j>=0)price.push(label(j));if(cash>0)price.push(String(cash));
-    log(`${bot.name} продаёт ${p.name} ${acc(i)}${price.length?' за '+price.join(' и '):''}${cash<0?`, доплачивает ${-cash}`:''}`);
+  let yes;
+  if(them.bot){
+    const give=giveValue(them,i,p.id);
+    const gain=(j>=0?gainValue(them,j):0)+cash;
+    yes=gain>=give;
+    if(!yes&&isMe(p.id))tradeMsg=gain>=give*.8?'Бот почти согласился, но хочет немного больше.':'Бот считает предложение слишком низким.';
+  } else {
+    const gets=tradeGets(j,cash);
+    const txt=`${p.name} предлагает обмен: вы отдаёте ${acc(i)}${level[i]?`, улучшений ${level[i]}`:''}`
+      +(gets.length?`, получаете ${gets.join(' и ')}`:', не получая ничего взамен')
+      +(cash<0?`, и доплачиваете ${-cash}`:'')+'.';
+    const watch=`отдать ли ${acc(i)}${gets.length?` за ${gets.join(' и ')}`:' даром'}${cash<0?` с доплатой ${-cash}`:''}`;
+    yes=await evAsk(o,txt,[['Принять',true],['Отказать',false]],false,watch);
+    if(!yes&&isMe(p.id))tradeMsg=`${them.name} отказался от сделки.`;
+  }
+  if(yes){
+    p.money-=cash;them.money+=cash;owner[i]=p.id;if(j>=0)owner[j]=o;
+    const price=tradeGets(j,cash);
+    log(`${them.name} отдаёт ${acc(i)}${price.length?', получает '+price.join(' и '):' даром'}${cash<0?` и доплачивает ${-cash}`:''}`);
     if(isMe(p.id))tradeMsg='';
     sfx.buy();
   } else {
     lastAsk[i]=round;
-    if(isMe(p.id))tradeMsg=gain>=give*.8?'Бот почти согласился, но хочет немного больше.':'Бот считает предложение слишком низким.';
-    log(`${bot.name} отказался от сделки по ${label(i)}`);
+    log(`${them.name} отказался от сделки: ${label(i)}`);
   }
+  render();
 }
 // бот торгуется с любым живым игроком, а не только с местом 0: за столом их может быть несколько
 const humanOwner=i=>{const o=owner[i];return o>=0&&players[o].alive&&!players[o].bot?o:-1};
@@ -1329,7 +1353,8 @@ async function botOffer(p){
       const a=r10(CELLS[i].price*(1.6+.05*streetsOf(p.id))+level[i]*upVal(i)*1.2);
       if(p.money-a<p.risk+100)continue;
       botCool[key]=round;setSel(i);
-      const yes=await evAsk(t,`${p.name} хочет купить у вас ${acc(i)}${level[i]?` с улучшениями`:''} за ${a}.`,[['Продать за '+a,true],['Оставить себе',false]]);
+      const yes=await evAsk(t,`${p.name} хочет купить у вас ${acc(i)}${level[i]?` с улучшениями`:''} за ${a}.`,
+        [['Продать за '+a,true],['Оставить себе',false]],false,`продать ли ${acc(i)} боту ${p.name} за ${a}`);
       if(yes){owner[i]=p.id;p.money-=a;players[t].money+=a;log(`${players[t].name} продаёт ${p.name} ${acc(i)} за ${a}`);sfx.buy()}
       else log(`${players[t].name} отказал ${p.name} в продаже ${label(i)}`);
       render();return;
@@ -1350,7 +1375,7 @@ async function botOffer(p){
       text=`${p.name} хочет купить у вас ${CELLS[i].name}${level[i]?' с улучшениями':''} за ${a}. Это соберёт ему квартал.`;deal={k:-1,cash:a};
     }
     botCool[i]=round;setSel(i);
-    const yes=await evAsk(t,text,[['Согласиться',true],['Отказать',false]]);
+    const yes=await evAsk(t,text,[['Согласиться',true],['Отказать',false]],false,`принять ли предложение бота ${p.name} по ${prep(i)}`);
     if(yes){owner[i]=p.id;if(deal.k>=0)owner[deal.k]=t;p.money-=deal.cash;players[t].money+=deal.cash;log(`Сделка с ${p.name}: ${CELLS[i].name} уходит боту ${p.name}`);sfx.buy()}
     else log(`${players[t].name} отказал ${p.name} в сделке`);
     render();return;
