@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Два квадрата</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#100E1A; --surf:#1B1830; --surf2:#232041; --line:#2E2A4D;
+  --text:#F3F0FF; --dim:#9C97BC;
+  --you:#7B61FF; --foe:#FF7A59; --good:#38D9A9; --bad:#FF5470;
+  --rad:20px;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){--bg:#F3F1FA;--surf:#FFFFFF;--surf2:#F7F5FF;--line:#E2DEF3;--text:#1A1730;--dim:#6B6690;--you:#5B3DF5;--foe:#E24F26}
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Onest,system-ui,sans-serif;
+  font-size:15px;line-height:1.4;overflow:hidden;
+  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--you);outline-offset:2px}
+.app{height:100%;max-width:520px;margin:0 auto;padding:10px 12px 12px;
+  display:grid;grid-template-rows:repeat(6,auto) minmax(0,1fr);gap:10px;overflow:auto}
+
+/* HUD */
+.hud{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.who{background:var(--surf);border-radius:16px;padding:10px 12px;display:flex;flex-direction:column;gap:1px;
+  border:1.5px solid transparent;transition:border-color .2s}
+.who.acting{border-color:var(--you)}
+#hud1.acting{border-color:var(--foe)}
+.who .name{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.who .name::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--you)}
+#hud1 .name::before{background:var(--foe)}
+.who{position:relative}
+.who .val{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.valrow{display:flex;align-items:center;gap:10px;min-height:32px}
+.dslot{position:relative;flex:1;height:30px}
+.delta{position:absolute;left:0;top:50%;font-size:20px;font-weight:800;pointer-events:none;white-space:nowrap;
+  padding:1px 10px;border-radius:999px;animation:floatup 1.7s cubic-bezier(.25,.9,.35,1) forwards}
+.delta.plus{background:color-mix(in srgb,#38D9A9 20%,transparent)}
+.delta.minus{background:color-mix(in srgb,var(--bad) 20%,transparent)}
+.delta.plus,.hit.plus{color:#38D9A9}
+.delta.minus,.hit.minus{color:var(--bad)}
+.hit{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:30px;font-weight:800;
+  letter-spacing:-.02em;pointer-events:none;z-index:4;animation:hitup 1.8s cubic-bezier(.2,.9,.3,1) forwards;
+  padding:2px 12px;border-radius:999px;background:var(--surf);box-shadow:0 6px 20px rgba(0,0,0,.45)}
+.hit.plus{background:color-mix(in srgb,#38D9A9 22%,var(--surf));box-shadow:0 0 0 2px color-mix(in srgb,#38D9A9 45%,transparent),0 6px 20px rgba(0,0,0,.4)}
+.hit.minus{background:color-mix(in srgb,var(--bad) 22%,var(--surf));box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 45%,transparent),0 6px 20px rgba(0,0,0,.4)}
+.cell.flash-plus{animation:flashp .7s ease-out}
+.cell.flash-minus{animation:flashm .7s ease-out}
+@keyframes flashp{0%{background:color-mix(in srgb,#38D9A9 28%,var(--surf2))}100%{background:var(--surf2)}}
+@keyframes flashm{0%{background:color-mix(in srgb,var(--bad) 28%,var(--surf2))}100%{background:var(--surf2)}}
+@keyframes floatup{0%{opacity:0;transform:translate(-8px,-50%) scale(.7)}
+  14%{opacity:1;transform:translate(0,-50%) scale(1.25)}
+  28%{transform:translate(0,-50%) scale(1)}
+  70%{opacity:1;transform:translate(0,-50%)}
+  100%{opacity:0;transform:translate(6px,-90%)}}
+@keyframes hitup{0%{opacity:0;transform:translate(-50%,14px) scale(.6)}
+  12%{opacity:1;transform:translate(-50%,-4px) scale(1.35)}
+  24%{transform:translate(-50%,0) scale(1)}
+  60%{opacity:1;transform:translate(-50%,-16px) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-52px) scale(.95)}}
+.who .sub{font-size:11.5px;color:var(--dim)}
+.who.away .sub{color:var(--text);opacity:.75}
+.who.tired .sub{color:#FFC53D;opacity:1}
+.capbar{display:block;height:4px;border-radius:999px;background:var(--surf2);margin-top:6px;overflow:hidden}
+.capbar i{display:block;height:100%;background:var(--you);transition:width .3s}
+#hud1 .capbar i{background:var(--foe)}
+.capv{font-size:10.5px;color:var(--dim);margin-top:2px}
+
+.status{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim);flex-wrap:wrap}
+.pill{background:var(--surf);border-radius:999px;padding:5px 11px;font-size:12px}
+.pill.hot{background:color-mix(in srgb,var(--bad) 18%,var(--surf));color:var(--bad)}
+.pill b{font-weight:700;color:var(--text)}
+.pill.hot b{color:var(--bad)}
+.pill.menu{margin-left:auto;color:var(--text);border:1px solid var(--line)}
+button.pill{cursor:pointer;border:1px solid var(--line)}
+.note{margin:0;font-size:12.5px;color:var(--dim);background:var(--surf);border-radius:12px;padding:10px 12px;line-height:1.4}
+.note[hidden]{display:none}
+
+/* сцена */
+.stage{background:var(--surf);border-radius:var(--rad);padding:14px 12px;display:flex;
+  align-items:center;justify-content:center;gap:12px}
+.cellwrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.cellttl{font-size:12px;color:var(--dim);text-align:center}
+.cell{position:relative;background:var(--surf2);border-radius:16px;height:92px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;padding:10px;border:1.5px dashed var(--line)}
+.cell.mine{border-style:solid;border-color:color-mix(in srgb,var(--you) 45%,transparent)}
+.cell.foes{border-style:solid;border-color:color-mix(in srgb,var(--foe) 45%,transparent)}
+.rentlab{font-size:11.5px;color:var(--dim);text-align:center}
+.rentlab b{display:block;font-size:17px;font-weight:700;color:var(--text)}
+.rentlab b u{text-decoration:none;font-size:11px;font-weight:600;color:var(--bad);margin-left:4px}
+.rentlab.bump b{animation:bump 1.1s cubic-bezier(.25,1.2,.4,1)}
+@keyframes bump{0%{transform:scale(1)}18%{transform:scale(1.45);color:var(--bad)}45%{transform:scale(1);color:var(--bad)}100%{transform:scale(1)}}
+.pawn{font-size:12.5px;font-weight:600;border-radius:999px;color:#fff;
+  width:64px;height:28px;display:grid;place-items:center}
+.pawn.a{background:var(--you)}.pawn.b{background:var(--foe)}
+.pawn.guest{outline:2px dashed color-mix(in srgb,var(--text) 55%,transparent);outline-offset:2px}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+.coinwrap{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
+.coin{width:64px;height:64px;border-radius:50%;background:var(--surf2);display:grid;place-items:center;
+  font-size:28px;font-weight:800;border:2px solid var(--line);transition:transform .25s}
+.coin.flip{animation:spin .4s linear infinite}
+@keyframes spin{to{transform:rotateY(360deg)}}
+.coinlab{font-size:11px;color:var(--dim);transition:color .2s}
+.coinlab.live{font-weight:600}
+.coinlab.live.go{color:var(--you)}
+.coinlab.live.stay{color:var(--dim)}
+
+/* сообщение и кнопка */
+.toks{display:flex;gap:6px}
+.tk{flex:1;background:var(--surf);border-radius:14px;padding:8px 6px;display:flex;flex-direction:column;
+  align-items:center;gap:1px;font-size:11px;color:var(--dim);border:1.5px solid transparent;line-height:1.2}
+.tk b{font-size:13px;font-weight:600;color:var(--text)}
+.tk i{font-style:normal;font-size:11px}
+.tk.can{border-color:var(--you)}
+.tk.can i{color:var(--you);font-weight:600}
+.tk:disabled{opacity:.45;cursor:default}
+.msg{margin:0;font-size:13.5px;color:var(--dim);text-align:center;min-height:2.4em;display:grid;place-items:center;padding:0 4px}
+.acts{display:flex;gap:8px}
+.btn{flex:1;background:var(--you);color:#fff;border-radius:16px;padding:14px;font-weight:600;font-size:16px;
+  transition:transform .12s}
+.btn:active{transform:scale(.98)}
+.btn.ghost{background:var(--surf);color:var(--text)}
+.btn:disabled{opacity:.4;cursor:default}
+
+/* нижний лист */
+.sheet{background:var(--surf);border-radius:var(--rad);display:flex;flex-direction:column;min-height:120px}
+.tabs{display:flex;gap:4px;padding:8px 8px 0}
+.tab{flex:1;padding:8px;border-radius:12px;font-size:13px;color:var(--dim);font-weight:500}
+.tab[aria-selected="true"]{background:var(--surf2);color:var(--text)}
+.pane{overflow:auto;padding:8px 10px 12px;min-height:0}
+.pane[hidden]{display:none}
+
+.perks{display:flex;flex-direction:column;gap:6px}
+.card{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto auto;gap:1px 10px;
+  background:var(--surf2);border-radius:14px;padding:10px 12px;text-align:left;
+  border:1.5px solid transparent;transition:border-color .15s,transform .12s}
+.card.ready{border-color:color-mix(in srgb,var(--you) 40%,transparent)}
+.card.ready:active{transform:scale(.99)}
+.card.shut{opacity:.5}
+.shop{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.shop>span{font-size:11.5px;color:var(--dim)}
+.card .ring{grid-row:1/4;align-self:center}
+.card .nm{font-weight:600;font-size:14.5px}
+.card .ef{font-size:12px;color:var(--dim);grid-column:2}
+.card .nm{grid-column:2}
+.card .buy{grid-column:2;font-size:12px;color:var(--you);font-weight:600;margin-top:1px}
+.card .tag{grid-column:3;grid-row:1/4;align-self:center;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;min-width:58px;padding:7px 10px;border-radius:12px;background:var(--surf);line-height:1.15}
+.card.ready .tag{background:color-mix(in srgb,var(--you) 22%,var(--surf))}
+.card .tag i{font-style:normal;font-size:10px;color:var(--dim)}
+.card .tag b{font-size:16px;font-weight:700}
+.card .tag u{font-size:9.5px;text-decoration:none;color:var(--dim)}
+.card .q{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;margin-left:6px;
+  background:var(--surf);color:var(--dim);font-size:11px;font-weight:700;vertical-align:1px;cursor:help}
+.card .q:hover{color:var(--text)}
+.card[aria-disabled="true"]{cursor:default}
+.card[aria-disabled="true"] .tag b{color:var(--dim)}
+.card .side{grid-column:3;grid-row:1/4;align-self:center;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.card .side .tag{grid-column:auto;grid-row:auto}
+.card .sell{text-align:center;white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--bad);
+  padding:3px 10px;border-radius:999px;border:1.5px solid color-mix(in srgb,var(--bad) 55%,transparent);
+  background:color-mix(in srgb,var(--bad) 10%,transparent);cursor:pointer}
+.card .sell:hover{background:color-mix(in srgb,var(--bad) 22%,transparent);border-color:var(--bad)}
+.card .sell.off{opacity:.4;cursor:default}
+.card .howto{grid-column:1/4;font-size:12px;color:var(--dim);margin-top:6px;padding-top:6px;
+  border-top:1px solid var(--surf);line-height:1.4}
+.card.ready .tag b{color:var(--you)}
+.card:disabled .buy{color:var(--dim);font-weight:400}
+.ring{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;
+  background:conic-gradient(var(--c) var(--p),var(--line) 0)}
+.ring.a{--c:var(--you)}.ring.b{--c:var(--foe)}
+.ring b{width:30px;height:30px;border-radius:50%;background:var(--surf);display:grid;place-items:center;
+  font-size:14px;font-weight:700}
+.foeperks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.foeperks li{display:flex;align-items:center;gap:10px}
+.foeperks span{display:flex;flex-direction:column}
+.foeperks b{font-size:14px;font-weight:600}
+.foeperks i{font-size:12px;color:var(--dim);font-style:normal}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--dim)}
+.log .fresh{color:var(--text)}
+.rules{font-size:13px;color:var(--dim);line-height:1.45}
+.rules h3{font-size:13px;font-weight:700;color:var(--text);margin:14px 0 4px}
+.rules h3:first-child{margin-top:2px}
+.rules p{margin:0 0 4px}
+.rules ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
+.rules li::marker{color:var(--you)}
+.rules b{color:var(--text);font-weight:600}
+.rules .mut{margin-top:5px;font-size:12px}
+
+.overlay{position:fixed;inset:0;background:rgba(10,8,20,.7);display:grid;place-items:center;padding:20px;z-index:9}
+.overlay[hidden]{display:none}
+.panelbox{background:var(--surf);border-radius:24px;padding:24px;width:min(400px,100%);
+  display:flex;flex-direction:column;gap:12px;text-align:center}
+.panelbox h2{font-size:26px;font-weight:800;margin:0}
+.setup{display:flex;flex-direction:column;gap:14px;text-align:left}
+.field>span{font-size:12.5px;color:var(--dim);display:block;margin-bottom:6px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:38px;height:38px;border-radius:50%;border:2.5px solid transparent;transition:transform .12s}
+.sw.on{border-color:var(--text);transform:scale(1.06)}
+.opts{display:flex;gap:6px}
+.opt{flex:1;background:var(--surf2);border-radius:14px;padding:9px 6px;font-size:11px;color:var(--dim);
+  display:flex;flex-direction:column;gap:2px;line-height:1.25;border:1.5px solid transparent}
+.opt b{font-size:14px;font-weight:700;color:var(--text)}
+.opt.on{border-color:var(--you)}
+.panelbox p{margin:0;color:var(--dim);font-size:14px}
+.stats{display:flex;flex-direction:column;gap:2px;text-align:left}
+.srow{display:grid;grid-template-columns:1fr 62px 62px;gap:6px;align-items:center;
+  font-size:13px;color:var(--dim);padding:5px 2px;border-bottom:1px solid var(--surf2)}
+.srow b{text-align:right;color:var(--text);font-weight:600}
+.srow.head{color:var(--dim);border-bottom-color:var(--line)}
+.srow.head b{color:var(--dim);font-weight:500}
+@media (max-height:700px){.cell{height:74px}.coin{width:54px;height:54px;font-size:24px}.who .val{font-size:22px}.stage{padding:10px}}
+@media (prefers-reduced-motion:reduce){.coin.flip{animation:none}.pawn{animation:none}.delta{animation:fadeonly 1.7s linear forwards}}
+@keyframes fadeonly{0%,80%{opacity:1;transform:translateY(-50%)}100%{opacity:0;transform:translateY(-50%)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hud">
+    <div class="who" id="hud0"><span class="name" id="nm0">Вы</span><span class="valrow"><span class="val" id="money0">0</span><span class="dslot" id="dslot0"></span></span><span class="sub" id="sub0"></span><span class="capbar"><i id="cap0"></i></span><span class="capv" id="capv0"></span></div>
+    <div class="who" id="hud1"><span class="name" id="nm1">Соперник</span><span class="valrow"><span class="val" id="money1">0</span><span class="dslot" id="dslot1"></span></span><span class="sub" id="sub1"></span><span class="capbar"><i id="cap1"></i></span><span class="capv" id="capv1"></span></div>
+  </div>
+
+  <div class="status">
+    <span class="pill">круг <b id="round">1</b></span>
+    <button class="pill" id="infl" title="Что такое инфляция">+0%</button>
+    <span>рост ренты через <b id="inflnext">8</b></span>
+    <button class="pill" id="speedBtn" title="Темп анимации: на правила не влияет">темп</button>
+    <button class="pill menu" id="menuBtn">Меню</button>
+  </div>
+
+  <p class="note" id="inflNote" hidden></p>
+
+  <div class="stage">
+    <div class="cellwrap">
+      <span class="cellttl" id="ttlA">ваша клетка</span>
+      <div class="cell mine" id="cellA"></div>
+      <span class="rentlab">рента с гостя<b id="rentA">0</b></span>
+    </div>
+    <div class="coinwrap"><div class="coin" id="coin">—</div><span class="coinlab" id="note">монетка</span></div>
+    <div class="cellwrap">
+      <span class="cellttl" id="ttlB">клетка соперника</span>
+      <div class="cell foes" id="cellB"></div>
+      <span class="rentlab">рента с гостя<b id="rentB">0</b></span>
+    </div>
+  </div>
+
+  <div class="toks" id="toks"></div>
+  <p class="msg" id="msg"></p>
+  <div class="acts" id="acts"></div>
+
+  <div class="sheet">
+    <div class="tabs">
+      <button class="tab" data-tab="perks">Перки</button>
+      <button class="tab" data-tab="foe">Бот</button>
+      <button class="tab" data-tab="log">Лог</button>
+      <button class="tab" data-tab="rules">Правила</button>
+    </div>
+    <div class="pane" data-tab="perks"><div class="perks" id="perks"></div></div>
+    <div class="pane" data-tab="foe" hidden><ul class="foeperks" id="foeperks"></ul></div>
+    <div class="pane" data-tab="log" hidden><ul class="log" id="log"></ul></div>
+    <div class="pane" data-tab="rules" hidden><div class="rules" id="rules"></div></div>
+  </div>
+</div>
+<div class="overlay" id="ov" hidden><div class="panelbox" id="panel"></div></div>
+<script>
+const MAXLV=10, BASE_SALARY=60, RENT_KEEP=.5;
+const COLORS=[['#7B61FF','фиолетовый',258],['#38D9A9','мятный',165],['#4CC9F0','голубой',195],['#FF5470','малиновый',348],['#FFC53D','жёлтый',43],['#B5E853','лаймовый',82]];
+const hueOf=c=>(COLORS.find(x=>x[0]===c)||COLORS[0])[2];
+function foeColor(){
+  const h=hueOf(cfg.color);
+  let best=COLORS[0],bd=-1;
+  COLORS.forEach(([c,n,ch])=>{const d=Math.min(Math.abs(ch-h),360-Math.abs(ch-h));if(d>bd){bd=d;best=[c,n,ch]}});
+  return best;
+}
+const GOLD=[[180,'скромный старт'],[260,'обычный старт'],[400,'богатый старт']];
+const TOKENS={
+  reroll:{n:'Переброс',d:'Если бросок уводит в гости, можно перебросить.',price:60},
+  anchor:{n:'Якорь',d:'Вместо броска остаться на месте.',price:80},
+  dash:{n:'Рывок',d:'Вместо броска шагнуть на соседнюю клетку.',price:80},
+};
+const TK=Object.keys(TOKENS);
+const DIFFS={easy:['Новичок','Копит деньги и строится медленно'],normal:['Делец','Держит запас и ровно поднимает перки'],hard:['Акула','Вкладывает почти всё и давит рентой']};
+let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal'};
+const GOALS=[[0,'выключена'],[450,'быстрая'],[600,'обычная'],[900,'долгая']];
+/* Темп — это только длительность пауз, на правила он не влияет. Партия в 65 кругов
+   при «обычном» идёт около 4,5 минут, при «быстром» — меньше двух. */
+const SPEED={slow:[1.5,'спокойно'],normal:[1,'обычно'],fast:[.45,'быстро'],instant:[0,'мгновенно']};
+const sp=()=>(SPEED[cfg.speed]||SPEED.normal)[0];
+// всплывающие цифры живут по тому же темпу, иначе на «мгновенно» висят уже после хода
+const vis=ms=>Math.round(ms*Math.max(.15,sp()));
+const goal=()=>cfg.goal;
+try{Object.assign(cfg,JSON.parse(localStorage.getItem('duel-cfg'))||{})}catch(e){}
+if(!GOALS.some(([g])=>g===cfg.goal))cfg.goal=600;   // порог пересчитан, старое сохранённое значение недостижимо
+const saveCfg=()=>{try{localStorage.setItem('duel-cfg',JSON.stringify(cfg))}catch(e){}};
+const PERKS=[
+  {k:'rent',n:'Аренда',d:'Рента, которую платит соперник, попав на ваш квадрат.',
+   val:l=>[0,11,20,32,45,62,80,99,120,143,169][l],
+   fmt:l=>`рента ${[0,11,20,32,45,62,80,99,120,143,169][l]}`,
+   cost:[25,40,60,85,115,155,200,255,320,400], unlock:()=>true},
+  {k:'office',n:'Контора',d:'Прибавка к зарплате, которую вы получаете дома.',
+   val:l=>20*l, fmt:l=>`зарплата ${BASE_SALARY+20*l}`,
+   cost:[35,50,65,85,110,140,180,230,295,375], unlock:()=>true},
+  {k:'shield',n:'Страховка',d:'Скидка на ренту, которую вы платите сопернику.',
+   val:l=>6*l, fmt:l=>{const r=P[1]?Math.round(rentOf(P[1])*inflation()):0;
+     return l?`платите на ${6*l}% меньше${r?`: ${Math.max(0,Math.round(r*(1-6*l/100)))} вместо ${r}`:''}`:`платите полную ренту${r?`: ${r}`:''}`},
+   cost:[40,55,75,95,120,155,200,255,325,410], unlock:()=>true},
+  {k:'route',n:'Логистика',d:'Бонус за возвращение домой с чужого квадрата.',
+   val:l=>36*l, fmt:l=>`+${36*l} за возвращение`,
+   cost:[45,60,80,105,135,175,225,285,360,450], unlock:p=>total(p)>=3},
+  {k:'raid',n:'Рэкет',d:'Стоя в гостях, вы забираете часть ренты соперника обратно.',
+   val:l=>12*l, fmt:l=>{const foe=P[1],r=foe?Math.round(rentOf(foe)*inflation()*.12*l):0;
+     return l?`возвращаете ${12*l}% его ренты${r?`: ${r}`:''}`:'ничего не возвращаете'},
+   cost:[50,70,90,115,150,190,240,300,375,470], unlock:p=>total(p)>=3},
+];
+const PK=PERKS.map(p=>p.k);
+const total=p=>PK.reduce((s,k)=>s+p.lv[k],0);
+const HOWTO={
+  rent:'Срабатывает, когда соперник заканчивает ход на вашей клетке. Он платит ренту этого уровня, но вам достаётся только половина: вторая половина сгорает. Поэтому Аренда разоряет соперника быстрее всех, а копить деньги помогает плохо.',
+  office:'Зарплата приходит каждый раз, когда ваш ход закончился дома, неважно, шагнули вы туда или остались. Уровень добавляет к базовым 60 фиксированную сумму. Это самый надёжный доход: он не зависит от соперника.',
+  shield:'Уменьшает ренту, которую платите вы, оказавшись в гостях. Считается процентом от суммы уже с учётом инфляции. Чем выше Аренда у соперника, тем больше экономия, а против бедного соперника почти бесполезна.',
+  route:'Начисляется только в тот ход, когда вы вернулись домой из гостей. Если вы просто остались дома, бонуса нет. Хорошо сочетается с Рывком: жетон гарантирует возвращение.',
+  raid:'Пока вы стоите в гостях, вы забираете у соперника часть его же ренты. Считается процентом от неё, поэтому это прямой ответ тому, кто вложился только в Аренду: при высоких уровнях визит к нему перестаёт быть убыточным.',
+};
+const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:cfg.start,built:false,seen:{},streak:0,tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
+let P=[],turn=0,over=false,busy=false,rounds=0,gen=0,logs=[],coin='—',msg='',acts=[],botPlan=[];
+const STALE={};
+/* Мультиплеер. mySeat запрещено трогать в правилах и в логике бота — у клиентов он
+   разный, а расчёт обязан совпадать. Только отрисовка и мои собственные кнопки. */
+let mySeat=0,MP=false;
+let mp={ws:null,code:'',members:[],host:'',you:'',diff:'normal',absent:new Set(),tries:0,want:'',pending:null};
+const meP=()=>P[mySeat], foeP=()=>P[1-mySeat];
+// моё всегда слева: у обоих игроков своя клетка первая, иначе доска читается зеркально
+const dOrder=()=>[mySeat,1-mySeat];
+/* Детерминированный ГПСЧ: решения ботов и выбор плана должны совпасть у всех.
+   Монетка приходит с сервера отдельно и через него же становится честной. */
+let rndS=1;
+function rnd(){rndS=rndS+0x6D2B79F5|0;let t=Math.imul(rndS^rndS>>>15,1|rndS);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}
+
+/* ---------- поток событий ---------- */
+/* Партия — последовательность событий: бросок монетки и решение игрока. Всё остальное
+   выводится из них детерминированно. Одиночная игра идёт тем же слоем с локальным
+   транспортом, поэтому код один и разъехаться не может. */
+let evLog=[],evPend=null,replaying=false,evCur=0,desync=false;
+const net={mode:'local',send:null};
+function evReset(){if(evPend){evPend.reject(STALE);evPend=null}evLog=[];evCur=0;desync=false}
+function stateHash(){
+  let h=7;
+  const add=x=>{const t=String(x);for(let i=0;i<t.length;i++)h=(Math.imul(h,31)+t.charCodeAt(i))|0};
+  add(turn);add(rounds);add(rndS);
+  P.forEach(p=>{add(p.pos);add(p.money);add(p.streak);add(p.built?1:0);add(p.cd);add(p.force||'');
+    PK.forEach(k=>add(p.lv[k]));TK.forEach(k=>{add(p.tok[k]);add(p.tokBuys[k])})});
+  return h>>>0;
+}
+function onDesync(seq,mine,theirs){
+  desync=true;
+  console.warn('duel: расхождение на шаге',seq,'у меня',mine,'у отправителя',theirs);
+  log('Внимание: состояние разошлось с соперником, партию лучше начать заново');
+}
+function evApply(ev){
+  if(ev.seq!==evLog.length)return;
+  evLog[ev.seq]=ev;
+  if(evPend&&evPend.seq===ev.seq){const w=evPend;evPend=null;w.resolve(ev)}
+}
+function evEmit(ev){
+  if(evLog[ev.seq])return;
+  if(net.mode==='local'){
+    if(ev.kind==='dice')ev.v=[1+rnd()*6|0,1+rnd()*6|0];
+    evApply(ev);
+  } else net.send({...ev,h:stateHash()});
+}
+/* Отпечаток сверяем в точке, где корутина дошла до шага, а не когда прилетел пакет:
+   пакет может прийти, пока мы ещё доигрываем предыдущий ход. */
+function evGet(seq){
+  const g=gen;
+  evCur=seq+1;
+  const mine=MP&&!replaying&&!desync?stateHash():0;
+  const chk=ev=>{if(mine&&typeof ev.h==='number'&&ev.h!==mine&&!desync)onDesync(seq,mine,ev.h);return ev};
+  if(evLog[seq])return Promise.resolve(chk(evLog[seq]));
+  if(replaying){replaying=false;render()}
+  return new Promise((resolve,reject)=>{evPend={seq,resolve,reject}})
+    .then(ev=>{if(g!==gen)throw STALE;return chk(ev)});
+}
+const TIMEOUT=75000,TIMEOUT_ABSENT=1500;
+function evStall(seq,seat,fallback){
+  if(net.mode==='local')return evGet(seq);
+  const t0=Date.now();
+  const iv=setInterval(()=>{
+    if(evLog[seq])return;
+    if(Date.now()-t0>=(mp.absent.has(seat)?TIMEOUT_ABSENT:TIMEOUT))fallback();
+  },500);
+  return evGet(seq).finally(()=>clearInterval(iv));
+}
+const canDrive=seat=>net.mode==='local'||P[seat].bot||seat===mySeat||mp.absent.has(seat);
+// монетка — чётность серверного шестигранника: ровно 50/50 и подкрутить её нельзя
+async function evCoin(seat){
+  const seq=evCur;
+  if(canDrive(seat))evEmit({kind:'dice',seat,seq});
+  return (await evStall(seq,seat,()=>evEmit({kind:'dice',seat,seq}))).v[0]%2;
+}
+async function evAsk(seat,text,btns){
+  const seq=evCur;
+  const def=btns[btns.length-1][1];
+  if(seat===mySeat){
+    msg=text;
+    acts=btns.map(([l,val,gh])=>[l,()=>evEmit({kind:'act',seat,seq,v:val}),gh]);
+  } else {
+    msg=`${P[seat].name} решает…`;acts=[];
+    if(mp.absent.has(seat))evEmit({kind:'act',seat,seq,v:def});
+  }
+  render();
+  const ev=await evStall(seq,seat,()=>evEmit({kind:'act',seat,seq,v:def}));
+  acts=[];
+  return ev.v;
+}
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,Math.round(ms*sp())));
+const pawnId=p=>'pawn'+(p===meP()?0:1);
+const shown=[],tweens=[],pendingHits=[];
+function inflFlash(){
+  render();
+  ['rentA','rentB'].forEach(id=>{
+    const box=$(id)&&$(id).parentElement;if(!box)return;
+    box.classList.remove('bump');void box.offsetWidth;box.classList.add('bump');
+    setTimeout(()=>box.classList.remove('bump'),vis(1100));
+  });
+  ['cellA','cellB'].forEach(id=>{
+    const box=$(id);if(!box)return;
+    const d=document.createElement('span');d.className='hit minus';d.textContent='рента ×'+inflation().toFixed(1).replace('.',',');
+    d.style.fontSize='16px';box.appendChild(d);setTimeout(()=>d.remove(),vis(1800));
+  });
+}
+function flushHits(){
+  while(pendingHits.length){
+    const h=pendingHits.shift();
+    const pawn=$('pawn'+h.i),box=pawn&&pawn.parentElement;
+    if(!box)continue;
+    const d=document.createElement('span');d.className='hit '+h.cls;d.textContent=h.txt;
+    box.appendChild(d);setTimeout(()=>d.remove(),vis(1800));
+    const fl='flash-'+h.cls;box.classList.remove(fl);void box.offsetWidth;box.classList.add(fl);
+    setTimeout(()=>box.classList.remove(fl),vis(700));
+  }
+}
+function showMoney(i,to){
+  const el=$('money'+i);if(!el)return;
+  if(shown[i]===undefined){shown[i]=to;el.textContent=to;return}
+  const from=shown[i];
+  if(from===to){el.textContent=to;return}
+  shown[i]=to;
+  const txt=(to>from?'+':'−')+Math.abs(to-from),cls=to>from?'plus':'minus';
+  const slot=$('dslot'+i);
+  if(slot){const d=document.createElement('span');d.className='delta '+cls;d.textContent=txt;
+    slot.appendChild(d);setTimeout(()=>d.remove(),vis(1700))}
+  if(typeof requestAnimationFrame!=='function'){el.textContent=to;return}
+  if(tweens[i])cancelAnimationFrame(tweens[i]);
+  const t0=performance.now(),dur=vis(520);
+  const step=now=>{
+    const k=Math.min(1,(now-t0)/dur),e=1-Math.pow(1-k,3);
+    el.textContent=Math.round(from+(to-from)*e);
+    if(k<1)tweens[i]=requestAnimationFrame(step);else el.textContent=to;
+  };
+  tweens[i]=requestAnimationFrame(step);
+}
+const rectOf=p=>{const el=$(pawnId(p));return el?el.getBoundingClientRect():null};
+function animateMove(p,before,stayed){
+  const el=$(pawnId(p));if(!el||!el.animate)return;
+  if(stayed){el.animate([{transform:'none'},{transform:'translateY(-12px) scale(1.08)'},{transform:'none'}],
+    {duration:460,easing:'cubic-bezier(.3,1.3,.5,1)'});return}
+  const now=el.getBoundingClientRect();
+  if(!before)return;
+  const dx=before.left-now.left,dy=before.top-now.top;
+  if(!dx&&!dy)return;
+  el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'translate(0,-14px)',offset:.55},{transform:'none'}],
+    {duration:620,easing:'cubic-bezier(.32,.9,.3,1)'});
+}
+const perk=k=>PERKS.find(p=>p.k===k);
+const lvl=(p,k)=>p.lv[k];
+const val=(p,k)=>perk(k).val(p.lv[k]);
+const cost=(p,k)=>p.lv[k]<MAXLV?perk(k).cost[p.lv[k]]:null;
+const open=(p,k)=>{if(p.seen&&p.seen[k])return true;const o=perk(k).unlock(p)||p.lv[k]>0;if(o&&p.seen)p.seen[k]=true;return o};
+const salary=p=>BASE_SALARY+val(p,'office');
+const rentOf=p=>val(p,'rent');
+let INFL_EVERY=8;   // балансовый рычаг: через сколько кругов дорожает рента и срабатывает налог
+const inflation=()=>1+.1*Math.floor(rounds/INFL_EVERY);
+const payFor=(p,foe)=>Math.max(0,Math.round(rentOf(foe)*inflation()*(1-val(p,'shield')/100)));
+const atHome=p=>P[p.pos]===p;
+const foeOf=p=>P[0]===p?P[1]:P[0];
+const tokPrice=(p,k)=>Math.round(TOKENS[k].price*(1+.6*p.tokBuys[k])*(atHome(p)?1:1.5)/5)*5;
+const cdLeft=p=>Math.max(0,p.cd+3-rounds);
+const capital=p=>p.money;
+async function leaderTax(){
+  const da=capital(P[0])-capital(P[1]);
+  const lead=da>0?P[0]:P[1], lag=da>0?P[1]:P[0], gap=Math.abs(da);
+  const tax=Math.round(gap*.1);
+  if(tax<10){log('Налог на лидера: разрыв маленький, обошлось');return}
+  if(lead.money<tax){
+    log(`Налог на лидера: ${lead.bot?lead.name+' не может заплатить':'вам не хватает наличных'} ${tax}`);
+    render();
+    if(!await coverDebt(lead,tax)){lag.money+=lead.money;lead.money=0;end(lag);return}
+  }
+  const pay=Math.min(tax,lead.money);
+  lead.money-=pay;lag.money+=pay;lead.st.tax+=pay;
+  log(`Налог на лидера: ${lead.bot?lead.name+' отдаёт':'вы отдаёте'} ${pay} сопернику, разрыв в деньгах ${gap}`);
+}
+function log(t){logs.unshift(t);logs.length=Math.min(logs.length,60);renderLog()}
+function renderLog(){$('log').innerHTML=logs.map((t,i)=>`<li${i?'':' class="fresh"'}>${t}</li>`).join('')}
+function renderRules(){
+  const g=cfg.goal, E=INFL_EVERY;
+  $('inflNote').innerHTML=`Каждые ${E} кругов рента дорожает на 10% от исходной: на ${E}-м круге платежи идут по ×1,1, на ${E*2}-м по ×1,2 и так далее. Растёт только рента, зарплата и цены перков остаются прежними, поэтому затянутая партия всё сильнее бьёт по тому, кто чаще ходит в гости. В тот же момент срабатывает налог на лидера: у кого больше денег на руках, тот отдаёт сопернику 10% разницы.`;
+  $('rules').innerHTML=`
+  <h3>Цель</h3>
+  <p>Разорить соперника${g?` или первым накопить <b>${g}</b> на руках. Вложенное в перки и жетоны не считается`:''}.</p>
+
+  <h3>Ход</h3>
+  <ul>
+    <li>Монетка: <b>1</b> — шаг на соседнюю клетку, <b>0</b> — остаётесь. Всегда поровну.</li>
+    <li>Закончили ход <b>дома</b> — получаете зарплату.</li>
+    <li>Закончили ход <b>в гостях</b> — платите ренту. Владелец получает половину, вторая сгорает.</li>
+    <li>За ход одно действие: поднять перк (только дома) или купить жетон.</li>
+  </ul>
+
+  <h3>Серии</h3>
+  <ul>
+    <li>Простоять на одной клетке три хода подряд нельзя: на третий вас переводит на соседнюю, что бы ни выпало.</li>
+    <li>Счёт серии сбрасывается при каждом переходе.</li>
+  </ul>
+
+  <h3>Перки</h3>
+  <ul>
+    <li><b>Аренда</b> — сколько платит соперник у вас в гостях.</li>
+    <li><b>Контора</b> — прибавка к зарплате.</li>
+    <li><b>Страховка</b> — скидка на ренту, которую платите вы.</li>
+    <li><b>Логистика</b> — бонус за возвращение домой из гостей.</li>
+    <li><b>Рэкет</b> — в гостях забираете долю ренты соперника.</li>
+  </ul>
+  <p class="mut">У каждого 10 уровней. Логистика и Рэкет открываются после трёх уровней в любых перках. Продать уровень за полцены можно в любой момент своего хода.</p>
+
+  <h3>Жетоны</h3>
+  <ul>
+    <li><b>Переброс</b> — перебросить монетку, если она уводит в гости.</li>
+    <li><b>Якорь</b> — остаться на месте вместо броска.</li>
+    <li><b>Рывок</b> — шагнуть вместо броска.</li>
+  </ul>
+  <p class="mut">После применения — перезарядка 3 круга. Каждая покупка того же жетона дороже на 60%, в гостях ещё +50%.</p>
+
+  <h3>Каждые ${INFL_EVERY} кругов</h3>
+  <ul>
+    <li>Инфляция: рента дорожает на 10% от исходной.</li>
+    <li>Налог на лидера: у кого больше денег, отдаёт сопернику 10% разницы.</li>
+  </ul>
+
+  <h3>Долги</h3>
+  <p>Не хватает на платёж — сами выбираете, какой уровень продать за полцены. Продавать нечего — поражение.</p>`;
+}
+renderRules();
+
+let tab='perks',note='',openInfo='',finished=true,showInfl=false;
+const ring=(l,cls)=>`<span class="ring ${cls}" style="--p:${l*36}deg"><b>${l}</b></span>`;
+function render(){
+  if(replaying)return;
+  const me=meP(),foe=foeP();
+  if(!me||!foe)return;
+  const ord=dOrder();
+  ord.forEach((seat,i)=>{
+    const p=P[seat];
+    showMoney(i,p.money);
+    $('nm'+i).textContent=i===0?'Вы':p.name;
+    $('hud'+i).classList.toggle('acting',turn===seat&&!over);
+    $('hud'+i).classList.toggle('away',!atHome(p));
+    const n=p.streak||0;
+    $('sub'+i).textContent=atHome(p)
+      ?(n>=2?'дома 2 хода подряд · следующий ход — переход':`дома · зарплата ${salary(p)}`)
+      :(n>=2?'в гостях 2 хода подряд · следующий ход — домой':'в гостях · платит ренту');
+    $('hud'+i).classList.toggle('tired',n>=2);
+    $('cap'+i).style.width=goal()?(Math.min(1,capital(p)/goal())*100).toFixed(0)+'%':'0%';
+    $('capv'+i).textContent=goal()?`до победы: ${p.money} из ${goal()}`:'';
+  });
+  $('ttlA').textContent='ваша клетка';
+  $('ttlB').textContent='клетка '+foe.name;
+  const inf0=inflation();
+  [['rentA',me],['rentB',foe]].forEach(([id,p])=>{
+    const base=rentOf(p),now=Math.round(base*inf0);
+    $(id).innerHTML=`${now}${inf0>1&&base?`<u>×${inf0.toFixed(1).replace('.',',')}</u>`:''}`;
+  });
+  ['A','B'].forEach((sfx,i)=>{
+    const cellIdx=ord[i],box=$('cell'+sfx);
+    box.innerHTML=P.filter(q=>q.pos===cellIdx).map(q=>`<span class="pawn ${q===me?'a':'b'}${atHome(q)?'':' guest'}" id="pawn${q===me?0:1}">${q===me?'Вы':q.name}</span>`).join('');
+  });
+  flushHits();
+  $('coin').textContent=coin;$('coin').classList.toggle('flip',busy);
+  const nl=$('note');
+  if(nl){
+    if(note){nl.textContent=note;nl.className='coinlab live '+(note==='переход'?'go':'stay')}
+    else{
+      nl.textContent=me.streak>=2?'переход обязателен':'монетка';
+      nl.className='coinlab'+(me.streak>=2?' live go':'');
+    }
+  }
+  $('msg').textContent=msg;
+  const inf=inflation();
+  $('round').textContent=rounds+1;
+  $('infl').textContent=`+${Math.round((inf-1)*100)}%`;
+  $('infl').className='pill'+(inf>1?' hot':'');
+  $('inflNote').hidden=!showInfl;
+  $('inflnext').textContent=INFL_EVERY-(rounds%INFL_EVERY);
+  $('speedBtn').textContent='темп: '+(SPEED[cfg.speed]||SPEED.normal)[1];
+  const a=$('acts');a.innerHTML='';
+  acts.forEach(([label,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=label;b.disabled=!!dis;b.onclick=fn;a.appendChild(b)});
+  const home=atHome(me),locked=!idleCtx||over;
+  $('perks').innerHTML=PERKS.map(pk=>{
+    const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k);
+    const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
+      :c===null?'максимум':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
+    return `<div class="card${unlocked?'':' shut'}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
+      ${ring(l,'a')}
+      <span class="nm">${pk.n}<span class="q" data-info="${pk.k}" title="${HOWTO[pk.k]}" role="button" aria-label="Как работает ${pk.n}">?</span></span>
+      <span class="ef">${unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
+      <span class="buy">${unlocked&&c!==null?`станет: ${pk.fmt(l+1)}`:(why||'')}</span>
+      <span class="side">
+        ${unlocked&&c!==null?`<span class="tag"><i>цена</i><b>${c}</b></span>`:''}
+        ${l>0?`<span class="sell${locked?' off':''}" data-sell="${pk.k}" role="button">продать +${Math.round(pk.cost[l-1]/2)}</span>`:''}
+      </span>
+      ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}
+    </div>`;
+  }).join('');
+  $('perks').innerHTML+=`<div class="shop"><span>Жетоны монетки — занимают действие хода, в гостях дороже на 50%</span>${TK.map(k=>{
+    const t=TOKENS[k],price=tokPrice(me,k),ok=!me.built&&!locked&&me.money>=price;
+    return `<button class="card${ok?' ready':''}" data-tok="${k}" ${ok?'':'disabled'}>
+      <span class="ring a" style="--p:0deg"><b>${me.tok[k]}</b></span>
+      <span class="nm">${t.n}</span><span class="ef">${t.d}${home?'':' Цена в гостях выше на 50%.'}</span>
+      <span class="tag"><i>цена</i><b>${price}</b></span></button>`}).join('')}</div>`;
+  $('perks').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{if(b.getAttribute('aria-disabled')!=='true'&&idleCtx)idleCtx.send({k:'buy',key:b.dataset.k})});
+  $('perks').querySelectorAll('[data-info]').forEach(q=>q.onclick=e=>{e.stopPropagation();openInfo=openInfo===q.dataset.info?'':q.dataset.info;render()});
+  $('perks').querySelectorAll('[data-sell]').forEach(q=>q.onclick=e=>{e.stopPropagation();if(idleCtx)idleCtx.send({k:'sell',key:q.dataset.sell})});
+  $('perks').querySelectorAll('[data-tok]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'tok',key:b.dataset.tok})});
+  const canAct=!locked;
+  $('toks').innerHTML=TK.map(k=>{
+    const t=TOKENS[k],have=me.tok[k];
+    const cd=cdLeft(me);
+    const blocked=k==='anchor'&&me.streak>=2;   // третий ход на месте всё равно станет переходом
+    const usable=canAct&&have>0&&cd===0&&!blocked;
+    const hint=blocked?'нельзя: будет переход':cd>0?`перезарядка ${cd}`:k==='reroll'?(have?'сработает при броске':'нет жетонов')
+      :(usable?'применить':have?'не ваш ход':'нет жетонов');
+    return `<button class="tk${usable&&k!=='reroll'?' can':''}" data-use="${k}" ${usable&&k!=='reroll'?'':'disabled'}>
+      <b>${t.n} · ${have}</b><i>${hint}</i></button>`}).join('');
+  $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
+  $('foeperks').innerHTML=PERKS.map(pk=>`<li>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
+  document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
+  document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{tab=t.dataset.tab;render()});
+$('menuBtn').onclick=()=>showSetup();
+// темп переключается прямо по ходу партии — за ним чаще тянутся в середине, а не на старте
+const SPK=Object.keys(SPEED);
+$('speedBtn').onclick=()=>{
+  cfg.speed=SPK[(SPK.indexOf(cfg.speed)+1)%SPK.length];saveCfg();render();
+};
+$('infl').onclick=()=>{showInfl=!showInfl;render()};
+function buy(p,k){
+  if(!PK.includes(k)||!atHome(p)||!open(p,k)||p.built)return;
+  const c=cost(p,k);if(c===null||p.money<c)return;
+  p.money-=c;p.lv[k]++;p.built=true;p.st.bought++;
+  log(`${p.name}: ${perk(k).n} до ${p.lv[k]} уровня за ${c} — ${perk(k).fmt(p.lv[k])}`);
+}
+function autoSell(p){
+  const owned=PK.filter(k=>p.lv[k]>0);
+  if(!owned.length)return false;
+  owned.sort((a,b)=>perk(b).cost[p.lv[b]-1]-perk(a).cost[p.lv[a]-1]);
+  const k=owned[0];p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;
+  p.st.sold++;log(`${p.name} продаёт уровень: ${perk(k).n} за ${back}`);
+  return true;
+}
+/* «Сдаться» стоит первой: по таймауту подставляется ПОСЛЕДНЯЯ кнопка, а ушедший
+   игрок должен продолжать играть, а не автоматически сливать партию. */
+async function askSale(p,need,owned){
+  const btns=[['Сдаться',null,true]];
+  owned.forEach(k=>{
+    const back=Math.round(perk(k).cost[p.lv[k]-1]/2);
+    btns.push([`${perk(k).n} ${p.lv[k]}→${p.lv[k]-1}: +${back}`,k,true]);
+  });
+  const v=await evAsk(p.id,`Нечем заплатить ${need}. На руках ${p.money}. Продайте уровень за полцены или сдайтесь.`,btns);
+  return owned.includes(v)?v:null;
+}
+async function coverDebt(p,need){
+  while(p.money<need){
+    const owned=PK.filter(k=>p.lv[k]>0);
+    if(!owned.length)return false;
+    if(p.bot){if(!autoSell(p))return false;continue}
+    const k=await askSale(p,need,owned);
+    if(k===null){log(`${p.name} сдаётся`);return false}
+    p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;p.st.sold++;
+    log(`${p.name} продаёт уровень: ${perk(k).n} за ${back}`);
+    render();
+  }
+  return true;
+}
+async function flip(p){
+  const g=gen;busy=true;acts=[];note='';render();
+  const alive=()=>g===gen&&!over;
+  let v;
+  // значение просим сразу, анимация крутится параллельно — сетевая задержка прячется под ней
+  const spin=async pr=>{
+    for(let i=0;i<7;i++){coin=Math.random()<.5?'1':'0';render();await sleep(60);if(!alive())throw STALE}
+    return await pr;
+  };
+  if(p.force){v=p.force==='stay'?0:1;coin=String(v);msg=`${p.name}: жетон вместо броска`;render();await sleep(500)}
+  else{
+    const pr=evCoin(p.id);pr.catch(()=>{});
+    v=await spin(pr);coin=String(v);render();
+    const away=P[v?1-p.pos:p.pos]!==p;
+    if(p.tok.reroll>0&&away&&cdLeft(p)===0){
+      let again;
+      if(p.bot){again=true;await sleep(400)}
+      else again=await evAsk(p.id,`Выпало ${v}, ${p===meP()?'вы попадёте':'игрок попадёт'} в гости. Перебросить? Жетонов: ${p.tok.reroll}`,
+        [['Перебросить',true],['Оставить',false,true]]);
+      if(!alive())return;
+      if(again){
+        p.tok.reroll--;p.st.toks++;p.cd=rounds;log(`${p.name}: переброс монетки`);
+        const pr2=evCoin(p.id);pr2.catch(()=>{});
+        v=await spin(pr2);coin=String(v);
+      }
+    }
+  }
+  p.force=null;
+  /* Три хода подряд на одной клетке невозможны: на третий выносит принудительно.
+     Это убирает мёртвые ходы и заодно задаёт потолок всему, что повышает шанс остаться. */
+  let forced=false;
+  if(v===0&&p.streak>=2){v=1;forced=true;coin='1'}
+  if(v===1)p.st.ones++;else p.st.zeros++;
+  const beforeRect=rectOf(p);
+  const wasHome=atHome(p);
+  if(v===1){p.pos=1-p.pos;note='переход';
+    msg=forced?`${p.name}: третий ход на месте — переход принудительно`:`${p.name}: выпала 1, шаг на соседнюю клетку`}
+  else {msg=`${p.name}: выпал 0, остаётся на месте`;note='на месте'}
+  render();animateMove(p,beforeRect,v===0);setTimeout(()=>{p.jump=false},280);await sleep(500);if(!alive())return;
+  p.streak=(wasHome===atHome(p))?p.streak+1:1;
+  if(atHome(p)){
+    let gain=salary(p);let extra='';
+    if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
+    p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name} дома: +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
+  } else {
+    const foe=P[p.pos],r=payFor(p,foe);
+    const keep=Math.round(r*RENT_KEEP);
+    const raid=Math.round(rentOf(foe)*inflation()*.12*p.lv.raid);
+    const take=Math.min(raid,foe.money+keep);
+    const need=Math.max(0,r-take);
+    if(!await coverDebt(p,need)){foe.money+=p.money;p.money=0;render();await sleep(600);return end(foe)}
+    p.money+=take-r;foe.money+=keep-take;
+    p.st.paid+=r;p.st.away++;foe.st.got+=keep;p.st.raid+=take;
+    foe.st.peak=Math.max(foe.st.peak,r);
+    const net=take-r;
+    msg=take
+      ?`${p.name} в гостях: рента ${r}, Рэкет забирает ${take}, итого ${net>=0?'+':'−'}${Math.abs(net)}`
+      :`${p.name} в гостях: рента ${r}, владельцу достаётся ${keep}`;
+    log(msg);
+    if(foe.money<0&&!await coverDebt(foe,0))return end(p);
+  }
+  if(goal()&&capital(p)>=goal()){render();await sleep(400);return end(p,'capital')}
+  render();await sleep(550);if(!alive())return;
+  if(p.bot)botBuild(p);
+  render();await sleep(350);
+}
+function sellLevel(p,k){
+  if(!PK.includes(k)||p.lv[k]<1)return;
+  p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;p.st.sold++;
+  log(`${p.name} продаёт уровень: ${perk(k).n} ${p.lv[k]+1}→${p.lv[k]} за ${back}`);
+}
+function useToken(p,k){
+  if(!TK.includes(k)||p.tok[k]<1||cdLeft(p)>0)return false;
+  if(k==='anchor'&&p.streak>=2)return false;   // третий ход на месте всё равно станет переходом
+  p.tok[k]--;p.st.toks++;p.cd=rounds;p.force=k==='anchor'?'stay':'move';
+  log(`${p.name} применяет жетон «${TOKENS[k].n}»`);
+  return true;
+}
+function buyToken(p,k){
+  if(!TK.includes(k))return;
+  const t=TOKENS[k],price=tokPrice(p,k);
+  if(p.built||p.money<price)return;
+  p.money-=price;p.tok[k]++;p.tokBuys[k]++;p.built=true;
+  log(`${p.name}: жетон «${t.n}» за ${price}${atHome(p)?'':' (в гостях, с наценкой)'}`);
+}
+function botBuild(p){
+  if(foeOf(p).lv.raid>=6&&p.lv.rent>=3&&rnd()<.5)sellLevel(p,'rent');
+  if(p.built)return;
+  if(!atHome(p)){
+    if(p.tok.dash===0&&cdLeft(p)===0&&payFor(p,foeOf(p))>salary(p)&&p.money-tokPrice(p,'dash')>payFor(p,foeOf(p)))buyToken(p,'dash');
+    return;
+  }
+  if(cfg.diff==='easy'&&rnd()<.35)return;
+  const k=cfg.diff==='easy'?3.5:cfg.diff==='hard'?1:2;
+  const reserve=Math.round(payFor(p,foeOf(p))*k)+(cfg.diff==='hard'?20:cfg.diff==='easy'?90:50);
+  const can=botPlan.filter(k=>open(p,k)&&cost(p,k)!==null&&p.money-cost(p,k)>=reserve);
+  const wantTok=cfg.diff==='hard'?.35:cfg.diff==='easy'?.1:.2;
+  const tot=TK.reduce((s,k)=>s+p.tok[k],0);
+  if(tot<3&&rnd()<wantTok){
+    const k=payFor(p,foeOf(p))>salary(p)?'reroll':'anchor';
+    if(p.money-tokPrice(p,k)>=reserve){buyToken(p,k);return}
+  }
+  if(can.length)buy(p,can[0]);
+}
+function botTokens(p){
+  const danger=payFor(p,foeOf(p));
+  if(cdLeft(p)===0&&atHome(p)&&p.streak<2&&p.tok.anchor>0&&danger>salary(p)*.8){p.tok.anchor--;p.st.toks++;p.cd=rounds;p.force='stay';log(`${p.name}: жетон «Якорь»`)}
+  else if(cdLeft(p)===0&&!atHome(p)&&p.tok.dash>0){p.tok.dash--;p.st.toks++;p.cd=rounds;p.force='move';log(`${p.name}: жетон «Рывок»`)}
+}
+/* Главный цикл партии, одинаковый у всех клиентов. Всё, что нельзя вычислить —
+   монетка и решения живых игроков, — приходит событиями в общем порядке. */
+async function gameLoop(){
+  try{
+    while(!over){
+      const p=P[turn];
+      if(p.bot){acts=[];idleCtx=null;busy=true;msg=`Ход ${p.name}`;render();await sleep(450)}
+      else await idlePhase(p);
+      if(over)return;
+      await flip(p);
+      if(over)return;
+      turn=1-turn;P[turn].built=false;
+      if(turn===0){
+        rounds++;
+        if(rounds%INFL_EVERY===0){
+          log(`Инфляция: рента подорожала, теперь множитель ×${inflation().toFixed(1).replace('.',',')}`);
+          inflFlash();await leaderTax();if(over)return;
+        }
+      }
+      if(P[turn].bot)botTokens(P[turn]);
+    }
+  }catch(e){if(e!==STALE)throw e}
+}
+const runGame=()=>gameLoop().catch(e=>{if(e===STALE)return;console.error(e);msg='Ошибка партии, смотрите консоль';acts=[];render()});
+/* Фаза до броска: игрок строит, продаёт, покупает жетон — и заканчивает её броском.
+   Каждое действие едет отдельным событием, поэтому картина у обоих одинаковая. */
+async function idlePhase(p){
+  while(true){
+    const seq=evCur;
+    renderIdle(p,seq);
+    if(p.id!==mySeat&&mp.absent.has(p.id))evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}});
+    const ev=await evStall(seq,p.id,()=>evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}}));
+    const a=ev.v;
+    if(!a||typeof a!=='object'||typeof a.k!=='string')continue;
+    if(a.k==='roll')return;
+    if(a.k==='use'){if(useToken(p,a.key))return;continue}
+    if(a.k==='buy')buy(p,a.key);
+    else if(a.k==='sell')sellLevel(p,a.key);
+    else if(a.k==='tok')buyToken(p,a.key);
+    render();
+  }
+}
+let idleCtx=null;   // живёт ровно пока идёт моя фаза до броска
+function renderIdle(p,seq){
+  busy=false;
+  if(p.id!==mySeat){
+    idleCtx=null;acts=[];msg=`Ход ${p.name}`;render();return;
+  }
+  const send=v=>{idleCtx=null;evEmit({kind:'act',seat:p.id,seq,v})};
+  idleCtx={p,seq,send};
+  msg=atHome(p)?(p.built?'Постройка в этом ходу уже сделана. Бросайте монетку.':'Вы дома: можно вложить деньги в один перк, потом бросайте монетку.')
+    :(p.built?'Вы в гостях, действие хода уже потрачено. Бросайте монетку.':'Вы в гостях: перки строить нельзя, но жетон купить можно, он дороже на 50%.');
+  acts=[['Бросить монетку',()=>send({k:'roll'})]];
+  render();
+}
+function end(winner,reason){
+  over=true;finished=true;busy=false;acts=[];idleCtx=null;replaying=false;   // партия могла кончиться прямо в перемотке
+  const win=winner===meP();
+  const foe=foeP();
+  const cause=reason==='capital'
+    ? (win?`Вы накопили ${goal()} и выиграли экономически.`:`${foe.name} накопил ${goal()} и выиграл экономически.`)
+    : (win?`${foe.name} обанкротился.`:'У вас закончились деньги и перки.');
+  $('panel').innerHTML=`<h2>${win?'Победа':'Поражение'}</h2>
+    <p>${cause}</p>
+    <div class="stats">
+      <div class="srow head"><span></span><b>вы</b><b>${foe.name}</b></div>
+      ${[['заработано зарплатой','wage'],['получено ренты','got'],['отдано ренты','paid'],
+         ['снято Рэкетом','raid'],['бонус Логистики','route'],['ходов в гостях','away'],
+         ['куплено уровней','bought'],['продано уровней','sold'],['самая дорогая рента','peak'],
+         ['потрачено жетонов','toks'],['отдано налогом лидера','tax'],
+         ['выпало единиц','ones'],['выпало нулей','zeros']]
+        .map(([t,k])=>`<div class="srow"><span>${t}</span><b>${meP().st[k]}</b><b>${foe.st[k]}</b></div>`).join('')}
+    </div>
+    <p>Кругов сыграно: ${rounds+1}.${goal()?'':' Победа по накоплениям была выключена.'} Инфляция на финише: +${Math.round((inflation()-1)*100)}%.</p>
+    <div class="acts"><button class="btn" id="again">Ещё раз</button><button class="btn ghost" id="setup">Настройки</button></div>`;
+  $('ov').hidden=false;$('setup').onclick=showSetup;render();
+  // в сетевой партии реванш заказывает хозяин комнаты, а не клиент сам у себя
+  $('again').onclick=()=>{
+    if(!MP)return reset();
+    if(mp.host===mp.you){mpSend({t:'restart'});$('again').textContent='Начинаю…'}
+    else $('again').textContent='Ждём хозяина комнаты';
+  };
+}
+function showSetup(){
+  const running=P.length>0&&!finished;
+  if(!running)over=true;
+  $('panel').innerHTML=`<h2>Два квадрата</h2>
+    <p>Монетка решает, шагнёте вы или останетесь. Дома вам платят, в гостях платите вы.</p>
+    <div class="setup">
+      <div class="field"><span>Цвет вашей фишки — соперник возьмёт ${foeColor()[1]}</span><div class="swatches">${COLORS.map(([c,n])=>`<button class="sw${cfg.color===c?' on':''}" data-color="${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div></div>
+      <div class="field"><span>Стартовое золото</span><div class="opts">${GOLD.map(([g,n])=>`<button class="opt${cfg.start===g?' on':''}" data-gold="${g}"><b>${g}</b>${n}</button>`).join('')}</div></div>
+      <div class="field"><span>Победа по накоплениям</span><div class="opts">${GOALS.map(([g,n])=>`<button class="opt${cfg.goal===g?' on':''}" data-goal="${g}"><b>${g||'нет'}</b>${n}</button>`).join('')}</div></div>
+      <div class="field"><span>Соперник</span><div class="opts">${Object.entries(DIFFS).map(([k,[n,d]])=>`<button class="opt${cfg.diff===k?' on':''}" data-diff="${k}"><b>${n}</b>${d}</button>`).join('')}</div></div>
+      <div class="field"><span>Темп — только длительность пауз, правила не меняет</span><div class="opts">${Object.entries(SPEED).map(([k,[,n]])=>`<button class="opt${cfg.speed===k?' on':''}" data-speed="${k}"><b>${n}</b></button>`).join('')}</div></div>
+    </div>
+    <div class="acts"><button class="btn" id="play">${running?'Начать заново':'Играть с ботом'}</button>
+      <button class="btn ghost" id="goRoom">Играть с человеком</button>
+      ${running?'<button class="btn ghost" id="goCancel">Вернуться к партии</button>':''}</div>`;
+  $('ov').hidden=false;
+  const re=()=>{saveCfg();applyColor();showSetup()};
+  $('panel').querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{cfg.color=b.dataset.color;re()});
+  $('panel').querySelectorAll('[data-gold]').forEach(b=>b.onclick=()=>{cfg.start=+b.dataset.gold;re()});
+  $('panel').querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{cfg.goal=+b.dataset.goal;re()});
+  $('panel').querySelectorAll('[data-diff]').forEach(b=>b.onclick=()=>{cfg.diff=b.dataset.diff;re()});
+  $('panel').querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{cfg.speed=b.dataset.speed;re()});
+  $('play').onclick=reset;
+  $('goRoom').onclick=()=>mpConnect('');
+  if($('goCancel'))$('goCancel').onclick=()=>{$('ov').hidden=true};
+}
+function applyColor(){
+  const r=document.documentElement;
+  r.style.setProperty('--you',cfg.color);
+  r.style.setProperty('--foe',foeColor()[0]);
+}
+function resetTable(seats,seed){
+  gen++;evReset();rndS=seed|0;finished=false;applyColor();renderRules();
+  P=seats.map((s,i)=>{const q=mk(s.name,i?'var(--foe)':'var(--you)',i,!!s.bot);q.id=i;return q});
+  const plans=[['rent','office','shield','raid','route'],['rent','shield','office','route','raid'],['rent','office','raid','shield','route']];
+  botPlan=plans[rnd()*plans.length|0];
+  turn=0;over=false;busy=false;rounds=0;logs=[];coin='—';shown.length=0;idleCtx=null;note='';
+  $('ov').hidden=true;
+}
+function reset(){
+  MP=false;mySeat=0;net.mode='local';
+  resetTable([{name:'Вы'},{name:'Бот',bot:true}],Math.random()*0x7FFFFFFF|0);
+  log(`Партия началась. У каждого по ${cfg.start}, зарплата дома ${BASE_SALARY}. Соперник: ${DIFFS[cfg.diff][0]}.`);
+  runGame();
+}
+/* ---------- сетевая партия ---------- */
+/* Сервер комнат — тот же, что у «Кварталов»: игру он не знает, только раздаёт места,
+   владеет случайностью и нумерует события. Монетка — чётность его шестигранника. */
+const QS=new URLSearchParams(location.search);
+const WS_URL=QS.get('ws')||'wss://telegramparser.duckdns.org/kvartaly';
+const NAMEKEY='duel-name',UIDKEY='duel-uid';
+function myUid(){
+  let u=null;try{u=localStorage.getItem(UIDKEY)}catch(e){}
+  if(!u){u=Math.random().toString(36).slice(2)+Date.now().toString(36);try{localStorage.setItem(UIDKEY,u)}catch(e){}}
+  return u;
+}
+const clean=v=>String(v||'').replace(/\s+/g,' ').trim().slice(0,16);
+function myName(){
+  let saved='';try{saved=localStorage.getItem(NAMEKEY)||''}catch(e){}
+  return clean(saved)||'Игрок';
+}
+function setMyName(v){
+  const n=clean(v);
+  try{n?localStorage.setItem(NAMEKEY,n):localStorage.removeItem(NAMEKEY)}catch(e){}
+  mpSend({t:'name',name:myName()});
+}
+const mpSend=m=>{try{if(mp.ws&&mp.ws.readyState===1)mp.ws.send(JSON.stringify(m))}catch(e){}};
+function mpConnect(code){
+  mp.want=code||'';
+  const prev=mp.ws;mp.ws=null;try{prev&&prev.close()}catch(e){}
+  let ws;try{ws=new WebSocket(WS_URL)}catch(e){return mpFail('Не удалось открыть соединение.')}
+  mp.ws=ws;net.mode='ws';net.send=ev=>mpSend({t:'intent',...ev});
+  if(!MP){$('panel').innerHTML='<h2>Подключаюсь…</h2><p>Ищу комнату на сервере.</p>';$('ov').hidden=false}
+  ws.onopen=()=>{
+    mp.tries=0;
+    mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),initData:''});
+    if(MP)mpSend({t:'sync',have:evLog.length});
+  };
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}mpMsg(m)};
+  ws.onclose=()=>{
+    if(mp.ws!==ws)return;
+    mp.tries++;
+    if(MP){msg='Связь потеряна, переподключаюсь…';render()}
+    else if(mp.tries>3)return mpFail('Сервер комнат не отвечает.');
+    setTimeout(()=>{if(mp.ws===ws)mpConnect(mp.want)},Math.min(8000,500*Math.pow(2,Math.min(4,mp.tries))));
+  };
+}
+function mpFail(text){
+  net.mode='local';
+  $('panel').innerHTML=`<h2>Не получилось</h2><p>${text}</p>
+    <div class="acts"><button class="btn" id="eBack">Играть с ботом</button></div>`;
+  $('ov').hidden=false;$('eBack').onclick=showSetup;
+}
+function mpMsg(m){
+  if(m.t==='lobby'){
+    mp.code=m.code;mp.want=m.code;mp.members=m.members||[];mp.host=m.host;mp.you=m.you;mp.diff=m.diff;
+    const typing=document.activeElement&&document.activeElement.id==='lName';
+    if(!MP&&!mp.pending&&!typing)showLobby();
+    return;
+  }
+  if(m.t==='presence'){mp.absent=new Set(m.absent||[]);return}
+  if(m.t==='start'){mp.pending=m;return}
+  if(m.t==='log'){mpRun(m.evs||[]);return}
+  if(m.t==='ev'){if(MP&&m.ev)evApply(m.ev);return}
+  if(m.t==='err'){mpFail(m.code==='full'?'В комнате уже двое.':m.code==='started'?'Партия уже идёт.':'Комната недоступна.');return}
+}
+/* Раздача мест и журнал приходят парой: пустой журнал — партия только началась,
+   непустой — мы вернулись и его надо перемотать. */
+function mpRun(evs){
+  const m=mp.pending;if(!m)return;
+  mp.pending=null;
+  if(!Number.isInteger(m.you)||m.you<0)return mpFail('Ваше место за столом не найдено.');
+  MP=true;mySeat=m.you;net.mode='ws';
+  const seats=m.seats.slice(0,2).map(x=>({name:x.name,bot:x.bot}));
+  while(seats.length<2)seats.push({name:'Бот',bot:true});
+  /* Порог и стартовое золото приходят от хозяина: если считать их по своим настройкам,
+     клиенты разойдутся на первом же ходу. */
+  const o=m.opts||{};
+  if(GOALS.some(([g])=>g===o.goal))cfg.goal=o.goal;
+  if(GOLD.some(([g])=>g===o.start))cfg.start=o.start;
+  if(o.diff&&DIFFS[o.diff])cfg.diff=o.diff;
+  resetTable(seats,m.seed);
+  evLog=evs.slice();
+  replaying=evLog.length>0;
+  $('ov').hidden=true;
+  if(!replaying)log(`Партия началась. У каждого по ${cfg.start}. Соперник: ${seats[1-mySeat].name}.`);
+  runGame();
+}
+function showLobby(){
+  const isHost=!!mp.you&&mp.host===mp.you;
+  const link=location.origin+location.pathname+'?room='+mp.code;
+  const rows=mp.members.map((x,i)=>`<div class="srow"><span>${x.name}${x.uid===mp.host?' · хозяин':''}${x.uid===mp.you?' · вы':''}</span><b>${x.online?'в комнате':'отошёл'}</b><b></b></div>`).join('');
+  $('panel').innerHTML=`<h2>Комната ${mp.code}</h2>
+    <p>Отправьте ссылку сопернику — он сядет за этот же стол.</p>
+    <div class="setup">
+      <label class="field"><span>Ваше имя за столом</span>
+        <input id="lName" type="text" maxlength="16" value="${myName().replace(/"/g,'&quot;')}"
+          style="width:100%;background:var(--surf2);border:1.5px solid var(--line);border-radius:12px;padding:10px;color:inherit"></label>
+    </div>
+    <div class="acts"><button class="btn" id="lCopy">Скопировать ссылку</button></div>
+    <div class="stats">${rows}</div>
+    <div class="acts">
+      ${isHost?`<button class="btn" id="lGo" ${mp.members.length<2?'disabled':''}>Начать партию</button>`:'<span>Ждём хозяина комнаты.</span>'}
+      <button class="btn ghost" id="lExit">Выйти</button></div>
+    ${isHost&&mp.members.length<2?'<p>Нужен второй игрок — пришлите ему ссылку.</p>':''}`;
+  $('ov').hidden=false;
+  $('lName').onchange=e=>setMyName(e.target.value);
+  $('lName').onblur=e=>setMyName(e.target.value);
+  $('lCopy').onclick=()=>{
+    const done=()=>{$('lCopy').textContent='Скопировано'};
+    try{navigator.clipboard.writeText(link).then(done,()=>prompt('Ссылка для соперника:',link))}
+    catch(e){prompt('Ссылка для соперника:',link)}
+  };
+  if($('lGo'))$('lGo').onclick=()=>{mpSend({t:'config',bots:0,opts:{goal:cfg.goal,start:cfg.start,diff:cfg.diff}});mpSend({t:'start'})};
+  $('lExit').onclick=()=>{const w=mp.ws;mp.ws=null;try{w&&w.close()}catch(e){}net.mode='local';showSetup()};
+}
+
+applyColor();
+/* Приглашение приходит ссылкой ?room=CODE и ведёт прямо в комнату, мимо настроек. */
+const joinCode=(QS.get('room')||'').toUpperCase().replace(/[^A-F0-9]/g,'').slice(0,6);
+if(joinCode)mpConnect(joinCode);
+else showSetup();
+</script>
+</body>
+</html>
