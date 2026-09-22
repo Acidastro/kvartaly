@@ -271,7 +271,10 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 </div>
 <div class="overlay" id="ov" hidden><div class="panelbox" id="panel"></div></div>
 <script>
-const MAXLV=10, BASE_SALARY=60, RENT_KEEP=.5;
+const MAXLV=10, BASE_SALARY=60;
+/* Доля ренты, которая достаётся владельцу; остальное сгорает. Балансовый рычаг:
+   чем меньше, тем хуже Аренда как источник дохода и тем безопаснее её игнорировать. */
+let RENT_KEEP=.5;
 const COLORS=[['#7B61FF','фиолетовый',258],['#38D9A9','мятный',165],['#4CC9F0','голубой',195],['#FF5470','малиновый',348],['#FFC53D','жёлтый',43],['#B5E853','лаймовый',82]];
 const hueOf=c=>(COLORS.find(x=>x[0]===c)||COLORS[0])[2];
 function foeColor(){
@@ -287,7 +290,7 @@ const TOKENS={
   dash:{n:'Рывок',d:'Вместо броска шагнуть на соседнюю клетку.',price:80},
 };
 const TK=Object.keys(TOKENS);
-const DIFFS={easy:['Новичок','Копит деньги и строится медленно'],normal:['Делец','Держит запас и ровно поднимает перки'],hard:['Акула','Вкладывает почти всё и давит рентой']};
+const DIFFS={easy:['Новичок','Копит деньги и строится медленно'],normal:['Делец','Держит запас и ровно поднимает перки'],hard:['Акула','Смотрит, что вы строите, и отвечает: ранняя Аренда, Рэкет против вашей ренты, дальше Контора']};
 let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal'};
 const GOALS=[[0,'выключена'],[450,'быстрая'],[600,'обычная'],[900,'долгая']];
 /* Темп — это только длительность пауз, на правила он не влияет. Партия в 65 кругов
@@ -786,8 +789,22 @@ function buyToken(p,k){
   p.money-=price;p.tok[k]++;p.tokBuys[k]++;p.built=true;
   log(`${p.name}: жетон «${t.n}» за ${price}${atHome(p)?'':' (в гостях, с наценкой)'}`);
 }
+/* «Акула» — линия, собранная из живых партий, а не из прогонов.
+   Первые пять уровней Аренды окупаются, дальше кривая ломается; на чужой Рэкет
+   отвечает Рэкетом; Контора приоритетнее Логистики, потому что платит на каждом
+   ходе дома, а не только на возвращении. Купленную Аренду не продаёт никогда:
+   вернуть половину вложенного хуже, чем терпеть урон от Рэкета. */
+function sharkBuild(p){
+  if(p.built||!atHome(p))return;
+  const foe=foeOf(p), reserve=payFor(p,foe)+30;
+  const can=k=>{const c=cost(p,k);return c!==null&&open(p,k)&&p.money-c>=reserve};
+  if(foe.lv.rent>=2&&p.lv.raid<foe.lv.rent&&can('raid'))return buy(p,'raid');
+  if(foe.lv.raid<2&&p.lv.rent<5&&can('rent'))return buy(p,'rent');
+  if(can('office'))return buy(p,'office');
+  if(p.lv.office>=6&&can('route'))return buy(p,'route');
+}
 function botBuild(p){
-  if(foeOf(p).lv.raid>=6&&p.lv.rent>=3&&rnd()<.5)sellLevel(p,'rent');
+  if(cfg.diff==='hard')return sharkBuild(p);
   if(p.built)return;
   if(!atHome(p)){
     if(p.tok.dash===0&&cdLeft(p)===0&&payFor(p,foeOf(p))>salary(p)&&p.money-tokPrice(p,'dash')>payFor(p,foeOf(p)))buyToken(p,'dash');
