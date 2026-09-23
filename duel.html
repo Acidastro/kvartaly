@@ -262,6 +262,8 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
     <button class="pill" id="infl" title="Что такое инфляция">+0%</button>
     <span>рост ренты через <b id="inflnext">8</b></span>
     <button class="pill" id="speedBtn" title="Темп анимации: на правила не влияет">темп</button>
+    <button class="pill" id="sndBtn" title="Звук" aria-label="Звук">🔊</button>
+    <button class="pill" id="hapBtn" title="Вибрация" aria-label="Вибрация" hidden>📳</button>
     <button class="pill menu" id="menuBtn">Меню</button>
   </div>
 
@@ -320,7 +322,7 @@ const TOKENS={
 };
 const TK=Object.keys(TOKENS);
 const DIFFS={easy:['Новичок','Копит деньги и строится медленно'],normal:['Делец','Держит запас и ровно поднимает перки'],hard:['Акула','Смотрит, что вы строите, и отвечает: ранняя Аренда, Рэкет против вашей ренты, дальше Контора']};
-let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal',draft:true};
+let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal',draft:true,sound:true,haptic:true};
 const GOALS=[[0,'выключена'],[450,'быстрая'],[600,'обычная'],[900,'долгая']];
 /* Темп — это только длительность пауз, на правила он не влияет. Партия в 65 кругов
    при «обычном» идёт около 4,5 минут, при «быстром» — меньше двух. */
@@ -328,6 +330,48 @@ const SPEED={slow:[1.5,'спокойно'],normal:[1,'обычно'],fast:[.45,'
 const sp=()=>(SPEED[cfg.speed]||SPEED.normal)[0];
 // всплывающие цифры живут по тому же темпу, иначе на «мгновенно» висят уже после хода
 const vis=ms=>Math.round(ms*Math.max(.15,sp()));
+
+/* ---------- звук и вибрация ---------- */
+/* Синтез через WebAudio, без файлов. Звук и вибрация — чистая косметика, поэтому здесь
+   можно и meP(), и Math.random(): на ход партии и на синхронность они не влияют. */
+let actx;
+function tone(f,d=.08,type='sine',v=.07,delay=0){
+  if(!cfg.sound)return;
+  try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const t=actx.currentTime+delay;
+    const o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.setValueAtTime(f,t);
+    g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(actx.destination);o.start(t);o.stop(t+d+.02)}catch(e){}
+}
+// iOS не даёт стартовать AudioContext вне пользовательского жеста — будим его на первом тапе
+function unlockAudio(){
+  if(!cfg.sound)return;
+  try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume()}catch(e){}
+}
+// impact-вибрацию троттлим: вращение монетки дёргает её семь раз подряд
+let hapLast=0;
+function hap(kind){
+  if(!cfg.haptic||typeof inTG==='undefined'||!inTG||!TG.HapticFeedback)return;
+  const notif=kind==='success'||kind==='error'||kind==='warning';
+  if(!notif){const t=performance.now();if(t-hapLast<110)return;hapLast=t}
+  try{notif?TG.HapticFeedback.notificationOccurred(kind):TG.HapticFeedback.impactOccurred(kind)}catch(e){}
+}
+/* При перемотке журнала и на «мгновенном» темпе молчим: там десятки событий в секунду,
+   и звук превратился бы в треск. Итог партии звучит всегда. */
+const quiet=()=>replaying||sp()===0;
+const sfx={
+  tick:()=>{if(quiet())return;tone(300+Math.random()*260,.025,'square',.02);hap('light')},
+  go:()=>{if(quiet())return;tone(520,.07,'triangle',.06);tone(700,.09,'triangle',.06,.06);hap('medium')},
+  stay:()=>{if(quiet())return;tone(330,.12,'triangle',.05);hap('soft')},
+  gain:()=>{if(quiet())return;tone(880,.06,'sine',.05);tone(1175,.1,'sine',.05,.05);hap('light')},
+  pay:()=>{if(quiet())return;tone(320,.12,'triangle');tone(230,.16,'triangle',.07,.1);hap('warning')},
+  buy:()=>{if(quiet())return;tone(520,.1);tone(780,.14,'sine',.07,.09);hap('medium')},
+  foeBuy:()=>{if(quiet())return;tone(196,.12,'sine',.04)},
+  token:()=>{if(quiet())return;[660,880].forEach((f,i)=>tone(f,.07,'square',.03,i*.05));hap('rigid')},
+  click:()=>{if(quiet())return;tone(600,.03,'triangle',.04);hap('soft')},
+  alarm:()=>{if(quiet())return;[392,370,392].forEach((f,i)=>tone(f,.1,'sawtooth',.025,i*.11));hap('warning')},
+  reveal:()=>{if(quiet())return;[440,550,660].forEach((f,i)=>tone(f,.08,'sine',.05,i*.07));hap('rigid')},
+  win:()=>{[523,659,784,1046].forEach((f,i)=>tone(f,.18,'sine',.08,i*.12));hap('success')},
+  lose:()=>{[392,330,262].forEach((f,i)=>tone(f,.22,'triangle',.08,i*.15));hap('error')},
+};
 const goal=()=>cfg.goal;
 try{Object.assign(cfg,JSON.parse(localStorage.getItem('duel-cfg'))||{})}catch(e){}
 if(!GOALS.some(([g])=>g===cfg.goal))cfg.goal=600;   // порог пересчитан, старое сохранённое значение недостижимо
@@ -663,6 +707,8 @@ function render(){
   $('inflNote').hidden=!showInfl;
   $('inflnext').textContent=INFL_EVERY-(rounds%INFL_EVERY);
   $('speedBtn').textContent='темп: '+(SPEED[cfg.speed]||SPEED.normal)[1];
+  $('sndBtn').textContent=cfg.sound?'🔊':'🔇';$('sndBtn').setAttribute('aria-pressed',cfg.sound);
+  $('hapBtn').style.opacity=cfg.haptic?1:.4;$('hapBtn').setAttribute('aria-pressed',cfg.haptic);
   const a=$('acts');a.innerHTML='';
   acts.forEach(([label,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=label;b.disabled=!!dis;b.onclick=fn;a.appendChild(b)});
   const home=atHome(me),locked=!idleCtx||over;
@@ -716,10 +762,14 @@ $('speedBtn').onclick=()=>{
   cfg.speed=SPK[(SPK.indexOf(cfg.speed)+1)%SPK.length];saveCfg();render();
 };
 $('infl').onclick=()=>{showInfl=!showInfl;render()};
+$('sndBtn').onclick=()=>{cfg.sound=!cfg.sound;saveCfg();render();if(cfg.sound){unlockAudio();sfx.buy()}};
+$('hapBtn').onclick=()=>{cfg.haptic=!cfg.haptic;saveCfg();render();hap('medium')};
+document.addEventListener('pointerdown',unlockAudio,{passive:true});
 function buy(p,k){
   if(!PK.includes(k)||!atHome(p)||!open(p,k)||p.built)return;
   const c=cost(p,k);if(c===null||p.money<c)return;
   p.money-=c;p.lv[k]++;p.built=true;p.st.bought++;
+  if(p===meP())sfx.buy();else sfx.foeBuy();
   log(`${p.name}: ${perk(k).n} до ${p.lv[k]} уровня за ${c}, ${perk(k).fmt(p.lv[k])}`);
 }
 function autoSell(p){
@@ -760,7 +810,7 @@ async function flip(p){
   let v;
   // значение просим сразу, анимация крутится параллельно — сетевая задержка прячется под ней
   const spin=async pr=>{
-    for(let i=0;i<7;i++){coin=Math.random()<.5?'1':'0';render();await sleep(60);if(!alive())throw STALE}
+    for(let i=0;i<7;i++){coin=Math.random()<.5?'1':'0';render();sfx.tick();await sleep(60);if(!alive())throw STALE}
     return await pr;
   };
   if(p.force){v=p.force==='stay'?0:1;coin=String(v);msg=`${p.name}: жетон вместо броска`;render();await sleep(500)}
@@ -775,7 +825,7 @@ async function flip(p){
         [['Перебросить',true],['Оставить',false,true]]);
       if(!alive())return;
       if(again){
-        p.tok.reroll--;p.st.toks++;p.cd=rounds;log(`${p.name}: переброс монетки`);
+        p.tok.reroll--;p.st.toks++;p.cd=rounds;log(`${p.name}: переброс монетки`);sfx.token();
         const pr2=evCoin(p.id);pr2.catch(()=>{});
         v=await spin(pr2);coin=String(v);
       }
@@ -789,6 +839,7 @@ async function flip(p){
   if(v===1)p.st.ones++;else p.st.zeros++;
   const beforeRect=rectOf(p);
   const wasHome=atHome(p);
+  if(v===1)sfx.go();else sfx.stay();
   if(v===1){p.pos=1-p.pos;note='переход';
     msg=forced?`${p.name}: третий ход на месте — переход принудительно`:`${p.name}: выпала 1, шаг на соседнюю клетку`}
   else {msg=`${p.name}: выпал 0, остаётся на месте`;note='на месте'}
@@ -798,6 +849,7 @@ async function flip(p){
     let gain=salary(p);let extra='';
     if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
     p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
+    if(p===meP())sfx.gain();
   } else {
     const foe=P[p.pos],r=payFor(p,foe);
     const keep=Math.round(r*RENT_KEEP);
@@ -817,6 +869,7 @@ async function flip(p){
         ?`${p.name}: в гостях, рента ${r}, половина сгорает, Рэкет возвращает гостю ${take}. ${tally}`
         :`${p.name}: в гостях, рента ${r}, половина сгорает. ${tally}`;
     log(msg);
+    if(r||take){if(p===meP())sfx.pay();else if(foe===meP())sfx.gain()}
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
   }
   if(goal()&&capital(p)>=goal()){render();await sleep(400);return end(p,'capital')}
@@ -832,13 +885,13 @@ async function flip(p){
 function togglePerk(p,k){
   if(!PK.includes(k)||p.lv[k]<1)return;
   p.off[k]=!p.off[k];
-  log(`${p.name}: перк «${perk(k).n}» ${p.off[k]?'выключен':'снова включён'}`);
+  log(`${p.name}: перк «${perk(k).n}» ${p.off[k]?'выключен':'снова включён'}`);sfx.click();
 }
 function useToken(p,k){
   if(!TK.includes(k)||p.tok[k]<1||cdLeft(p)>0)return false;
   if(k==='anchor'&&p.streak>=2)return false;   // третий ход на месте всё равно станет переходом
   p.tok[k]--;p.st.toks++;p.cd=rounds;p.force=k==='anchor'?'stay':'move';
-  log(`${p.name}: применён жетон «${TOKENS[k].n}»`);
+  log(`${p.name}: применён жетон «${TOKENS[k].n}»`);sfx.token();
   return true;
 }
 function buyToken(p,k){
@@ -846,6 +899,7 @@ function buyToken(p,k){
   const t=TOKENS[k],price=tokPrice(p,k);
   if(p.built||p.money<price)return;
   p.money-=price;p.tok[k]++;p.tokBuys[k]++;p.built=true;
+  if(p===meP())sfx.buy();else sfx.foeBuy();
   log(`${p.name}: куплен жетон «${t.n}» за ${price}${atHome(p)?'':' (в гостях, с наценкой)'}`);
 }
 /* «Акула» — линия, собранная из живых партий, а не из прогонов.
@@ -887,8 +941,8 @@ function botBuild(p){
 }
 function botTokens(p){
   const danger=payFor(p,foeOf(p));
-  if(cdLeft(p)===0&&atHome(p)&&p.streak<2&&p.tok.anchor>0&&danger>salary(p)*.8){p.tok.anchor--;p.st.toks++;p.cd=rounds;p.force='stay';log(`${p.name}: применён жетон «Якорь»`)}
-  else if(cdLeft(p)===0&&!atHome(p)&&p.tok.dash>0){p.tok.dash--;p.st.toks++;p.cd=rounds;p.force='move';log(`${p.name}: применён жетон «Рывок»`)}
+  if(cdLeft(p)===0&&atHome(p)&&p.streak<2&&p.tok.anchor>0&&danger>salary(p)*.8){p.tok.anchor--;p.st.toks++;p.cd=rounds;p.force='stay';log(`${p.name}: применён жетон «Якорь»`);sfx.token()}
+  else if(cdLeft(p)===0&&!atHome(p)&&p.tok.dash>0){p.tok.dash--;p.st.toks++;p.cd=rounds;p.force='move';log(`${p.name}: применён жетон «Рывок»`);sfx.token()}
 }
 /* ---------- драфт ---------- */
 /* Перед первым броском каждый закрывает сопернику один перк на всю партию. Это
@@ -923,7 +977,7 @@ async function draftPhase(){
   P[0].ban=bans[0];P[1].ban=bans[1];
   log(`Драфт: ${P[0].name} — без перка «${perk(bans[0]).n}», ${P[1].name} — без перка «${perk(bans[1]).n}»`);
   msg=`Драфт закрыт. ${P[0].name}: нет «${perk(bans[0]).n}». ${P[1].name}: нет «${perk(bans[1]).n}».`;
-  acts=[];render();await sleep(1100);
+  acts=[];render();sfx.reveal();await sleep(1100);
 }
 /* Главный цикл партии, одинаковый у всех клиентов. Всё, что нельзя вычислить —
    монетка и решения живых игроков, — приходит событиями в общем порядке. */
@@ -942,7 +996,7 @@ async function gameLoop(){
         rounds++;
         if(rounds%INFL_EVERY===0){
           log(`Инфляция: рента подорожала, теперь множитель ×${inflation().toFixed(1).replace('.',',')}`);
-          inflFlash();await leaderTax();if(over)return;
+          sfx.alarm();inflFlash();await leaderTax();if(over)return;
         }
       }
       if(P[turn].bot)botTokens(P[turn]);
@@ -986,6 +1040,7 @@ function end(winner,reason){
   const win=winner===meP();
   const foe=foeP();
   recordResult(win,reason==='capital'?'capital':gaveUp?'surrender':'bankrupt');
+  win?sfx.win():sfx.lose();
   const cause=reason==='capital'
     ? (win?`Вы накопили ${goal()} и выиграли экономически.`:`${foe.name} накопил ${goal()} и выиграл экономически.`)
     : (win?`${foe.name} обанкротился.`:'У вас закончились деньги и перки.');
@@ -1314,6 +1369,7 @@ function showLobby(){
 }
 
 initTG();
+if(inTG)$('hapBtn').hidden=false;
 applyColor();
 flushResults();
 /* Приглашение приходит ссылкой ?room=CODE или диплинком startapp=CODE и ведёт прямо в комнату, мимо настроек. */
