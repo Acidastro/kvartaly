@@ -173,11 +173,13 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 .card[aria-disabled="true"] .tag b{color:var(--dim)}
 .card .side{grid-column:3;grid-row:1/4;align-self:center;display:flex;flex-direction:column;align-items:stretch;gap:6px}
 .card .side .tag{grid-column:auto;grid-row:auto}
-.card .sell{text-align:center;white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--bad);
-  padding:3px 10px;border-radius:999px;border:1.5px solid color-mix(in srgb,var(--bad) 55%,transparent);
-  background:color-mix(in srgb,var(--bad) 10%,transparent);cursor:pointer}
-.card .sell:hover{background:color-mix(in srgb,var(--bad) 22%,transparent);border-color:var(--bad)}
-.card .sell.off{opacity:.4;cursor:default}
+.card .tog{text-align:center;white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--dim);
+  padding:3px 10px;border-radius:999px;border:1.5px solid var(--line);cursor:pointer}
+.card .tog:hover{color:var(--text);border-color:var(--dim)}
+.card .tog.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 55%,transparent);background:color-mix(in srgb,var(--good) 10%,transparent)}
+.card .tog.off{opacity:.4;cursor:default}
+.card.paused{border-style:dashed;border-color:var(--line)}
+.card.paused .nm,.card.paused .ring{opacity:.55}
 .card .howto{grid-column:1/4;font-size:12px;color:var(--dim);margin-top:6px;padding-top:6px;
   border-top:1px solid var(--surf);line-height:1.4}
 .card.ready .tag b{color:var(--you)}
@@ -341,7 +343,7 @@ const HOWTO={
   route:'Начисляется только в тот ход, когда вы вернулись домой из гостей. Если вы просто остались дома, бонуса нет. Хорошо сочетается с Рывком: жетон гарантирует возвращение.',
   raid:'Пока вы стоите в гостях, вы забираете у соперника часть его же ренты. Считается процентом от неё, поэтому это прямой ответ тому, кто вложился только в Аренду: при высоких уровнях визит к нему перестаёт быть убыточным.',
 };
-const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:cfg.start,built:false,seen:{},streak:0,ban:null,tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
+const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:cfg.start,built:false,seen:{},streak:0,ban:null,off:{},tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
 let P=[],turn=0,over=false,busy=false,rounds=0,gen=0,logs=[],coin='—',msg='',acts=[],botPlan=[];
 const STALE={};
 /* Мультиплеер. mySeat запрещено трогать в правилах и в логике бота — у клиентов он
@@ -368,7 +370,7 @@ function stateHash(){
   const add=x=>{const t=String(x);for(let i=0;i<t.length;i++)h=(Math.imul(h,31)+t.charCodeAt(i))|0};
   add(turn);add(rounds);add(rndS);
   P.forEach(p=>{add(p.pos);add(p.money);add(p.streak);add(p.built?1:0);add(p.cd);add(p.force||'');add(p.ban||'');
-    PK.forEach(k=>add(p.lv[k]));TK.forEach(k=>{add(p.tok[k]);add(p.tokBuys[k])})});
+    PK.forEach(k=>{add(p.lv[k]);add(p.off[k]?1:0)});TK.forEach(k=>{add(p.tok[k]);add(p.tokBuys[k])})});
   return h>>>0;
 }
 function onDesync(seq,mine,theirs){
@@ -496,7 +498,8 @@ function animateMove(p,before,stayed){
 }
 const perk=k=>PERKS.find(p=>p.k===k);
 const lvl=(p,k)=>p.lv[k];
-const val=(p,k)=>perk(k).val(p.lv[k]);
+// выключенный перк не действует, но уровни остаются: включить обратно можно в любой свой ход
+const val=(p,k)=>p.off[k]?0:perk(k).val(p.lv[k]);
 const cost=(p,k)=>p.lv[k]<MAXLV?perk(k).cost[p.lv[k]]:null;
 // бан из драфта проверяется до кэша seen: перк мог успеть открыться до раздачи запретов
 const open=(p,k)=>{if(p.ban===k)return false;if(p.seen&&p.seen[k])return true;const o=perk(k).unlock(p)||p.lv[k]>0;if(o&&p.seen)p.seen[k]=true;return o};
@@ -558,7 +561,7 @@ function renderRules(){
     <li><b>Логистика</b> — бонус за возвращение домой из гостей.</li>
     <li><b>Рэкет</b> — в гостях забираете долю ренты соперника.</li>
   </ul>
-  <p class="mut">У каждого 10 уровней. Логистика и Рэкет открываются после трёх уровней в любых перках. Продать уровень за полцены можно в любой момент своего хода.</p>
+  <p class="mut">У каждого 10 уровней. Логистика и Рэкет открываются после трёх уровней в любых перках. Купленный перк можно выключить и снова включить в любой свой ход, это не тратит действие. Например, Аренду стоит выключать против сильного Рэкета: с 5-го уровня он забирает с вашей ренты больше, чем достаётся вам.</p>
 
   <h3>Жетоны</h3>
   <ul>
@@ -575,7 +578,7 @@ function renderRules(){
   </ul>
 
   <h3>Долги</h3>
-  <p>Не хватает на платёж — сами выбираете, какой уровень продать за полцены. Продавать нечего — поражение.</p>`;
+  <p>Продать перк можно только в долгах: не хватает на платёж — сами выбираете, какой уровень продать за полцены. Продавать нечего — поражение.</p>`;
 }
 renderRules();
 
@@ -633,18 +636,18 @@ function render(){
   acts.forEach(([label,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=label;b.disabled=!!dis;b.onclick=fn;a.appendChild(b)});
   const home=atHome(me),locked=!idleCtx||over;
   $('perks').innerHTML=PERKS.map(pk=>{
-    const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k);
+    const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k),off=!!me.off[pk.k];
     const why=me.ban===pk.k?'закрыт соперником в драфте'
       :!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
       :c===null?'максимум':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
-    return `<div class="card${unlocked?'':' shut'}${me.ban===pk.k?' banned':''}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
+    return `<div class="card${unlocked?'':' shut'}${me.ban===pk.k?' banned':''}${off?' paused':''}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
       ${ring(l,'a')}
       <span class="nm">${pk.n}<span class="q" data-info="${pk.k}" title="${HOWTO[pk.k]}" role="button" aria-label="Как работает ${pk.n}">?</span></span>
-      <span class="ef">${unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
-      <span class="buy">${unlocked&&c!==null?`станет: ${pk.fmt(l+1)}`:(why||'')}</span>
+      <span class="ef">${off?`выключен, не действует. Уровень ${l} сохранён`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
+      <span class="buy">${unlocked&&c!==null?`станет: ${pk.fmt(l+1)}${off?' — после включения':''}`:(why||'')}</span>
       <span class="side">
         ${unlocked&&c!==null?`<span class="tag"><i>цена</i><b>${c}</b></span>`:''}
-        ${l>0?`<span class="sell${locked?' off':''}" data-sell="${pk.k}" role="button">продать +${Math.round(pk.cost[l-1]/2)}</span>`:''}
+        ${l>0?`<span class="tog${off?' on':''}${locked?' off':''}" data-tog="${pk.k}" role="button">${off?'включить':'выключить'}</span>`:''}
       </span>
       ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}
     </div>`;
@@ -657,7 +660,7 @@ function render(){
       <span class="tag"><i>цена</i><b>${price}</b></span></button>`}).join('')}</div>`;
   $('perks').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{if(b.getAttribute('aria-disabled')!=='true'&&idleCtx)idleCtx.send({k:'buy',key:b.dataset.k})});
   $('perks').querySelectorAll('[data-info]').forEach(q=>q.onclick=e=>{e.stopPropagation();openInfo=openInfo===q.dataset.info?'':q.dataset.info;render()});
-  $('perks').querySelectorAll('[data-sell]').forEach(q=>q.onclick=e=>{e.stopPropagation();if(idleCtx)idleCtx.send({k:'sell',key:q.dataset.sell})});
+  $('perks').querySelectorAll('[data-tog]').forEach(q=>q.onclick=e=>{e.stopPropagation();if(idleCtx)idleCtx.send({k:'toggle',key:q.dataset.tog})});
   $('perks').querySelectorAll('[data-tok]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'tok',key:b.dataset.tok})});
   const canAct=!locked;
   $('toks').innerHTML=TK.map(k=>{
@@ -670,7 +673,7 @@ function render(){
     return `<button class="tk${usable&&k!=='reroll'?' can':''}" data-use="${k}" ${usable&&k!=='reroll'?'':'disabled'}>
       <b>${t.n} · ${have}</b><i>${hint}</i></button>`}).join('');
   $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
-  $('foeperks').innerHTML=PERKS.map(pk=>`<li${foe.ban===pk.k?' class="banned"':''}>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
+  $('foeperks').innerHTML=PERKS.map(pk=>`<li${foe.ban===pk.k?' class="banned"':''}>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':foe.off[pk.k]?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
   document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
 }
@@ -767,7 +770,7 @@ async function flip(p){
   } else {
     const foe=P[p.pos],r=payFor(p,foe);
     const keep=Math.round(r*RENT_KEEP);
-    const raid=Math.round(rentOf(foe)*inflation()*.12*p.lv.raid);
+    const raid=Math.round(rentOf(foe)*inflation()*.12*(p.off.raid?0:p.lv.raid));
     const take=Math.min(raid,foe.money+keep);
     const need=Math.max(0,r-take);
     if(!await coverDebt(p,need)){foe.money+=p.money;p.money=0;render();await sleep(600);return end(foe)}
@@ -786,10 +789,15 @@ async function flip(p){
   if(p.bot)botBuild(p);
   render();await sleep(350);
 }
-function sellLevel(p,k){
+/* Продать перк по своей воле нельзя: продажа превращала вложенное в наличные, и игрок
+   добирал порог победы распродажей в один ход. Продажа осталась только в долгах (coverDebt).
+   Взамен перк можно выключить — это нужно против Рэкета: с 5-го его уровня соперник
+   забирает с вашей ренты больше, чем достаётся вам, и Аренда начинает работать на него.
+   Переключение не тратит действие хода и не меняет деньги. */
+function togglePerk(p,k){
   if(!PK.includes(k)||p.lv[k]<1)return;
-  p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;p.st.sold++;
-  log(`${p.name} продаёт уровень: ${perk(k).n} ${p.lv[k]+1}→${p.lv[k]} за ${back}`);
+  p.off[k]=!p.off[k];
+  log(`${p.name}: ${perk(k).n} ${p.off[k]?'выключена':'снова работает'}`);
 }
 function useToken(p,k){
   if(!TK.includes(k)||p.tok[k]<1||cdLeft(p)>0)return false;
@@ -811,8 +819,11 @@ function buyToken(p,k){
    ходе дома, а не только на возвращении. Купленную Аренду не продаёт никогда:
    вернуть половину вложенного хуже, чем терпеть урон от Рэкета. */
 function sharkBuild(p){
+  const foe=foeOf(p);
+  // владельцу остаётся 50% ренты, Рэкет соперника забирает 12% за уровень: с 5-го уровня Аренда в минусе
+  if(p.lv.rent>0&&!p.off.rent!==(foe.lv.raid<5||!!foe.off.raid))togglePerk(p,'rent');
   if(p.built||!atHome(p))return;
-  const foe=foeOf(p), reserve=payFor(p,foe)+30;
+  const reserve=payFor(p,foe)+30;
   const can=k=>{const c=cost(p,k);return c!==null&&open(p,k)&&p.money-c>=reserve};
   if(foe.lv.rent>=2&&p.lv.raid<foe.lv.rent&&can('raid'))return buy(p,'raid');
   if(foe.lv.raid<2&&p.lv.rent<5&&can('rent'))return buy(p,'rent');
@@ -917,7 +928,7 @@ async function idlePhase(p){
     if(a.k==='roll')return;
     if(a.k==='use'){if(useToken(p,a.key))return;continue}
     if(a.k==='buy')buy(p,a.key);
-    else if(a.k==='sell')sellLevel(p,a.key);
+    else if(a.k==='toggle')togglePerk(p,a.key);
     else if(a.k==='tok')buyToken(p,a.key);
     render();
   }
