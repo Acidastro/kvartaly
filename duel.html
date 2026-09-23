@@ -228,6 +228,8 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 .swatches{display:flex;gap:8px;flex-wrap:wrap}
 .sw{width:38px;height:38px;border-radius:50%;border:2.5px solid transparent;transition:transform .12s}
 .sw.on{border-color:var(--text);transform:scale(1.06)}
+/* занятый цвет остаётся узнаваемым, но зачёркнут: полупрозрачный жёлтый на тёмном выглядел бы бурым, «новым» цветом */
+.sw:disabled{opacity:.45;cursor:not-allowed;background-image:linear-gradient(45deg,transparent 44%,var(--bg) 44% 56%,transparent 56%)}
 .opts{display:flex;gap:6px}
 .opt{flex:1;background:var(--surf2);border-radius:14px;padding:9px 6px;font-size:11px;color:var(--dim);
   display:flex;flex-direction:column;gap:2px;line-height:1.25;border:1.5px solid transparent}
@@ -301,8 +303,8 @@ const MAXLV=10, BASE_SALARY=60;
 let RENT_KEEP=.5;
 const COLORS=[['#7B61FF','фиолетовый',258],['#38D9A9','мятный',165],['#4CC9F0','голубой',195],['#FF5470','малиновый',348],['#FFC53D','жёлтый',43],['#B5E853','лаймовый',82]];
 const hueOf=c=>(COLORS.find(x=>x[0]===c)||COLORS[0])[2];
-function foeColor(){
-  const h=hueOf(cfg.color);
+function foeColor(from){
+  const h=hueOf(from||cfg.color);
   let best=COLORS[0],bd=-1;
   COLORS.forEach(([c,n,ch])=>{const d=Math.min(Math.abs(ch-h),360-Math.abs(ch-h));if(d>bd){bd=d;best=[c,n,ch]}});
   return best;
@@ -715,14 +717,14 @@ function buy(p,k){
   if(!PK.includes(k)||!atHome(p)||!open(p,k)||p.built)return;
   const c=cost(p,k);if(c===null||p.money<c)return;
   p.money-=c;p.lv[k]++;p.built=true;p.st.bought++;
-  log(`${p.name}: ${perk(k).n} до ${p.lv[k]} уровня за ${c} — ${perk(k).fmt(p.lv[k])}`);
+  log(`${p.name}: ${perk(k).n} до ${p.lv[k]} уровня за ${c}, ${perk(k).fmt(p.lv[k])}`);
 }
 function autoSell(p){
   const owned=PK.filter(k=>p.lv[k]>0);
   if(!owned.length)return false;
   owned.sort((a,b)=>perk(b).cost[p.lv[b]-1]-perk(a).cost[p.lv[a]-1]);
   const k=owned[0];p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;
-  p.st.sold++;log(`${p.name} продаёт уровень: ${perk(k).n} за ${back}`);
+  p.st.sold++;log(`${p.name}: продан уровень «${perk(k).n}» за ${back}`);
   return true;
 }
 /* «Сдаться» стоит первой: по таймауту подставляется ПОСЛЕДНЯЯ кнопка, а ушедший
@@ -742,9 +744,9 @@ async function coverDebt(p,need){
     if(!owned.length)return false;
     if(p.bot){if(!autoSell(p))return false;continue}
     const k=await askSale(p,need,owned);
-    if(k===null){log(`${p.name} сдаётся`);return false}
+    if(k===null){log(`${p.name}: партия сдана`);return false}
     p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;p.st.sold++;
-    log(`${p.name} продаёт уровень: ${perk(k).n} за ${back}`);
+    log(`${p.name}: продан уровень «${perk(k).n}» за ${back}`);
     render();
   }
   return true;
@@ -792,7 +794,7 @@ async function flip(p){
   if(atHome(p)){
     let gain=salary(p);let extra='';
     if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
-    p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name} дома: +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
+    p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
   } else {
     const foe=P[p.pos],r=payFor(p,foe);
     const keep=Math.round(r*RENT_KEEP);
@@ -807,10 +809,10 @@ async function flip(p){
     const sg=v=>(v>=0?'+':'−')+Math.abs(v);
     const tally=`Итог: ${p.name} ${sg(take-r)}, ${foe.name} ${sg(keep-take)}`;
     msg=!r&&!take
-      ?`${p.name} в гостях: ренты нет, никто ничего не платит`
+      ?`${p.name}: в гостях, ренты нет, никто ничего не платит`
       :take
-        ?`${p.name} в гостях: рента ${r}, половина сгорает, Рэкет возвращает гостю ${take}. ${tally}`
-        :`${p.name} в гостях: рента ${r}, половина сгорает. ${tally}`;
+        ?`${p.name}: в гостях, рента ${r}, половина сгорает, Рэкет возвращает гостю ${take}. ${tally}`
+        :`${p.name}: в гостях, рента ${r}, половина сгорает. ${tally}`;
     log(msg);
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
   }
@@ -827,13 +829,13 @@ async function flip(p){
 function togglePerk(p,k){
   if(!PK.includes(k)||p.lv[k]<1)return;
   p.off[k]=!p.off[k];
-  log(`${p.name}: ${perk(k).n} ${p.off[k]?'выключена':'снова работает'}`);
+  log(`${p.name}: перк «${perk(k).n}» ${p.off[k]?'выключен':'снова включён'}`);
 }
 function useToken(p,k){
   if(!TK.includes(k)||p.tok[k]<1||cdLeft(p)>0)return false;
   if(k==='anchor'&&p.streak>=2)return false;   // третий ход на месте всё равно станет переходом
   p.tok[k]--;p.st.toks++;p.cd=rounds;p.force=k==='anchor'?'stay':'move';
-  log(`${p.name} применяет жетон «${TOKENS[k].n}»`);
+  log(`${p.name}: применён жетон «${TOKENS[k].n}»`);
   return true;
 }
 function buyToken(p,k){
@@ -841,7 +843,7 @@ function buyToken(p,k){
   const t=TOKENS[k],price=tokPrice(p,k);
   if(p.built||p.money<price)return;
   p.money-=price;p.tok[k]++;p.tokBuys[k]++;p.built=true;
-  log(`${p.name}: жетон «${t.n}» за ${price}${atHome(p)?'':' (в гостях, с наценкой)'}`);
+  log(`${p.name}: куплен жетон «${t.n}» за ${price}${atHome(p)?'':' (в гостях, с наценкой)'}`);
 }
 /* «Акула» — линия, собранная из живых партий, а не из прогонов.
    Первые пять уровней Аренды окупаются, дальше кривая ломается; на чужой Рэкет
@@ -882,8 +884,8 @@ function botBuild(p){
 }
 function botTokens(p){
   const danger=payFor(p,foeOf(p));
-  if(cdLeft(p)===0&&atHome(p)&&p.streak<2&&p.tok.anchor>0&&danger>salary(p)*.8){p.tok.anchor--;p.st.toks++;p.cd=rounds;p.force='stay';log(`${p.name}: жетон «Якорь»`)}
-  else if(cdLeft(p)===0&&!atHome(p)&&p.tok.dash>0){p.tok.dash--;p.st.toks++;p.cd=rounds;p.force='move';log(`${p.name}: жетон «Рывок»`)}
+  if(cdLeft(p)===0&&atHome(p)&&p.streak<2&&p.tok.anchor>0&&danger>salary(p)*.8){p.tok.anchor--;p.st.toks++;p.cd=rounds;p.force='stay';log(`${p.name}: применён жетон «Якорь»`)}
+  else if(cdLeft(p)===0&&!atHome(p)&&p.tok.dash>0){p.tok.dash--;p.st.toks++;p.cd=rounds;p.force='move';log(`${p.name}: применён жетон «Рывок»`)}
 }
 /* ---------- драфт ---------- */
 /* Перед первым броском каждый закрывает сопернику один перк на всю партию. Это
@@ -1036,8 +1038,9 @@ function showSetup(){
 }
 function applyColor(){
   const r=document.documentElement;
-  r.style.setProperty('--you',cfg.color);
-  r.style.setProperty('--foe',foeColor()[0]);
+  const [you,foe]=MP&&mp.cols?mp.cols:[cfg.color,foeColor()[0]];
+  r.style.setProperty('--you',you);
+  r.style.setProperty('--foe',foe);
 }
 function resetTable(seats,seed){
   gen++;evReset();rndS=seed|0;finished=false;applyColor();renderRules();
@@ -1115,7 +1118,7 @@ function mpConnect(code){
   if(!MP){$('panel').innerHTML='<h2>Подключаюсь…</h2><p>Ищу комнату на сервере.</p>';$('ov').hidden=false}
   ws.onopen=()=>{
     mp.tries=0;
-    mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),initData:(inTG&&TG.initData)||''});
+    mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),color:cfg.color,initData:(inTG&&TG.initData)||''});
     if(MP)mpSend({t:'sync',have:evLog.length});
   };
   ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}mpMsg(m)};
@@ -1136,6 +1139,14 @@ function mpFail(text){
 function mpMsg(m){
   if(m.t==='lobby'){
     mp.code=m.code;mp.want=m.code;mp.members=m.members||[];mp.host=m.host;mp.you=m.you;mp.diff=m.diff;
+    const mine=mp.members.find(x=>x.uid===mp.you);
+    // цвет мог достаться не тот, что сохранён (занят) — интерфейс лобби красим выданным
+    if(mine&&mine.color&&!MP)document.documentElement.style.setProperty('--you',mine.color);
+    if(mine&&!mine.color){
+      const taken=takenColors();
+      const pick=taken.includes(cfg.color)?(COLORS.find(([c])=>!taken.includes(c))||[])[0]:cfg.color;
+      if(pick)mpSend({t:'color',color:pick});
+    }
     const typing=document.activeElement&&document.activeElement.id==='lName';
     if(!MP&&!mp.pending&&!typing)showLobby();
     return;
@@ -1162,6 +1173,13 @@ function mpRun(evs){
   if(GOLD.some(([g])=>g===o.start))cfg.start=o.start;
   if(o.diff&&DIFFS[o.diff])cfg.diff=o.diff;
   if(typeof o.draft==='boolean')cfg.draft=o.draft;
+  /* Цвета — те, что игроки выбрали в лобби, одинаковые на обоих экранах. Если цвета нет
+     (старый сервер) или он совпал с моим — соперник получает самый непохожий. */
+  const sc=m.seats.slice(0,2).map(x=>x&&x.color);
+  const youC=sc[mySeat]||cfg.color;
+  let foeC=sc[1-mySeat];
+  if(!foeC||foeC===youC)foeC=foeColor(youC)[0];
+  mp.cols=[youC,foeC];
   resetTable(seats,m.seed);
   evLog=evs.slice();
   replaying=evLog.length>0;
@@ -1169,17 +1187,23 @@ function mpRun(evs){
   if(!replaying)log(`Партия началась. У каждого по ${cfg.start}. Соперник: ${seats[1-mySeat].name}.`);
   runGame();
 }
+// цвета, занятые другими игроками комнаты: их выбрать нельзя
+const takenColors=()=>mp.members.filter(x=>x.uid!==mp.you&&x.color).map(x=>x.color);
 function showLobby(){
   const isHost=!!mp.you&&mp.host===mp.you;
   const webLink=location.origin+location.pathname+'?room='+mp.code;
   const link=inTG?tgLink(mp.code):webLink;
-  const rows=mp.members.map((x,i)=>`<div class="srow"><span>${x.name}${x.uid===mp.host?' · хозяин':''}${x.uid===mp.you?' · вы':''}</span><b>${x.online?'в комнате':'отошёл'}</b><b></b></div>`).join('');
+  const taken=takenColors(),mine=(mp.members.find(x=>x.uid===mp.you)||{}).color;
+  const rows=mp.members.map((x,i)=>`<div class="srow"><span>${x.color?`<i style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:${x.color}"></i>`:''}${escHtml(x.name)}${x.uid===mp.host?' · хозяин':''}${x.uid===mp.you?' · вы':''}</span><b>${x.online?'в комнате':'отошёл'}</b><b></b></div>`).join('');
   $('panel').innerHTML=`<h2>Комната ${mp.code}</h2>
     <p>Отправьте ссылку сопернику — он сядет за этот же стол.</p>
     <div class="setup">
       <label class="field"><span>Ваше имя за столом</span>
         <input id="lName" type="text" maxlength="16" value="${myName().replace(/"/g,'&quot;')}"
           style="width:100%;background:var(--surf2);border:1.5px solid var(--line);border-radius:12px;padding:10px;color:inherit"></label>
+      <div class="field"><span>Цвет фишки — занятый соперником выбрать нельзя</span><div class="swatches">${COLORS.map(([c,n])=>{
+        const busy=taken.includes(c),who=busy?(mp.members.find(x=>x.color===c)||{}).name:'';
+        return `<button class="sw${mine===c?' on':''}" data-lcolor="${c}" style="background-color:${c}" ${busy?'disabled':''} title="${busy?`${n}: занят, ${escHtml(who)}`:n}" aria-label="${n}${busy?', занят':''}"></button>`}).join('')}</div></div>
     </div>
     <div class="acts">${inTG?'<button class="btn" id="lShare">Позвать друга</button>':''}
       <button class="btn${inTG?' ghost':''}" id="lCopy">Скопировать ссылку</button>
@@ -1191,6 +1215,10 @@ function showLobby(){
     ${isHost&&mp.members.length<2?'<p>Нужен второй игрок — пришлите ему ссылку.</p>':''}`;
   $('ov').hidden=false;
   $('lName').onchange=e=>setMyName(e.target.value);
+  $('panel').querySelectorAll('[data-lcolor]').forEach(b=>b.onclick=()=>{
+    if(b.disabled)return;
+    cfg.color=b.dataset.lcolor;saveCfg();applyColor();mpSend({t:'color',color:cfg.color});
+  });
   $('lName').onblur=e=>setMyName(e.target.value);
   $('lCopy').onclick=()=>{
     const done=()=>{$('lCopy').textContent='Скопировано'};
