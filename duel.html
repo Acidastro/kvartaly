@@ -202,6 +202,8 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 .foeperks i{font-size:12px;color:var(--dim);font-style:normal}
 .log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--dim)}
 .log .fresh{color:var(--text)}
+.log .pn{font-weight:600;color:#fff;border-radius:999px;padding:0 6px}
+.log .pn.a{background:var(--you)}.log .pn.b{background:var(--foe)}
 .rules{font-size:13px;color:var(--dim);line-height:1.45}
 .rules h3{font-size:13px;font-weight:700;color:var(--text);margin:14px 0 4px}
 .rules h3:first-child{margin-top:2px}
@@ -525,16 +527,28 @@ async function leaderTax(){
   const tax=Math.round(gap*.1);
   if(tax<10){log('Налог на лидера: разрыв маленький, обошлось');return}
   if(lead.money<tax){
-    log(`Налог на лидера: ${lead.bot?lead.name+' не может заплатить':'вам не хватает наличных'} ${tax}`);
+    log(`Налог на лидера: ${lead.name} — не хватает наличных на ${tax}`);
     render();
     if(!await coverDebt(lead,tax)){lag.money+=lead.money;lead.money=0;end(lag);return}
   }
   const pay=Math.min(tax,lead.money);
   lead.money-=pay;lag.money+=pay;lead.st.tax+=pay;
-  log(`Налог на лидера: ${lead.bot?lead.name+' отдаёт':'вы отдаёте'} ${pay} сопернику, разрыв в деньгах ${gap}`);
+  log(`Налог на лидера: ${lead.name} → ${lag.name} ${pay}, разрыв в деньгах был ${gap}`);
 }
 function log(t){logs.unshift(t);logs.length=Math.min(logs.length,60);renderLog()}
-function renderLog(){$('log').innerHTML=logs.map((t,i)=>`<li${i?'':' class="fresh"'}>${t}</li>`).join('')}
+/* Лог хранит голый текст, а имена красятся при выводе: цвет зависит от того, кто смотрит
+   (у каждого клиента «моя» фишка своего цвета), а журнал у всех один.
+   Текст сначала экранируется: в сетевой партии имя соперника — это ввод другого человека. */
+const escHtml=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+function paintNames(html){
+  const me=meP(),foe=foeP();
+  if(!me||!foe||me.name===foe.name)return html;   // одинаковые имена не различить — лучше без цвета, чем неверно
+  const cls={[escHtml(me.name)]:'a',[escHtml(foe.name)]:'b'};
+  const alt=Object.keys(cls).sort((x,y)=>y.length-x.length).map(n=>n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|');
+  // границы слова через \p{L}: обычный \b не понимает кириллицу, и «Вы» совпало бы внутри «Выпало»
+  return html.replace(new RegExp(`(?<![\\p{L}\\p{N}_])(${alt})(?![\\p{L}\\p{N}_])`,'gu'),n=>`<b class="pn ${cls[n]}">${n}</b>`);
+}
+function renderLog(){$('log').innerHTML=logs.map((t,i)=>`<li${i?'':' class="fresh"'}>${paintNames(escHtml(t))}</li>`).join('')}
 function renderRules(){
   const g=cfg.goal, E=INFL_EVERY;
   $('inflNote').innerHTML=`Каждые ${E} кругов рента дорожает на 10% от исходной: на ${E}-м круге платежи идут по ×1,1, на ${E*2}-м по ×1,2 и так далее. Растёт только рента, зарплата и цены перков остаются прежними, поэтому затянутая партия всё сильнее бьёт по тому, кто чаще ходит в гости. В тот же момент срабатывает налог на лидера: у кого больше денег на руках, тот отдаёт сопернику 10% разницы.`;
