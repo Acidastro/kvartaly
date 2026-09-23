@@ -147,6 +147,12 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 .card.ready{border-color:color-mix(in srgb,var(--you) 40%,transparent)}
 .card.ready:active{transform:scale(.99)}
 .card.shut{opacity:.5}
+/* перк, закрытый драфтом, не должен сливаться с «ещё не открытыми»: те откроются, этот нет */
+.card.banned{opacity:1;border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--surf2))}
+.card.banned .nm{color:var(--bad);text-decoration:line-through;text-decoration-thickness:2px}
+.card.banned .buy{color:var(--bad)}
+.foeperks li.banned b{color:var(--bad);text-decoration:line-through}
+.foeperks li.banned i{color:var(--bad)}
 .shop{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .shop>span{font-size:11.5px;color:var(--dim)}
 .card .ring{grid-row:1/4;align-self:center}
@@ -631,7 +637,7 @@ function render(){
     const why=me.ban===pk.k?'закрыт соперником в драфте'
       :!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
       :c===null?'максимум':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
-    return `<div class="card${unlocked?'':' shut'}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
+    return `<div class="card${unlocked?'':' shut'}${me.ban===pk.k?' banned':''}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
       ${ring(l,'a')}
       <span class="nm">${pk.n}<span class="q" data-info="${pk.k}" title="${HOWTO[pk.k]}" role="button" aria-label="Как работает ${pk.n}">?</span></span>
       <span class="ef">${unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
@@ -664,7 +670,7 @@ function render(){
     return `<button class="tk${usable&&k!=='reroll'?' can':''}" data-use="${k}" ${usable&&k!=='reroll'?'':'disabled'}>
       <b>${t.n} · ${have}</b><i>${hint}</i></button>`}).join('');
   $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
-  $('foeperks').innerHTML=PERKS.map(pk=>`<li>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
+  $('foeperks').innerHTML=PERKS.map(pk=>`<li${foe.ban===pk.k?' class="banned"':''}>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
   document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
 }
