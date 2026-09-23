@@ -643,8 +643,8 @@ function render(){
     return `<div class="card${unlocked?'':' shut'}${me.ban===pk.k?' banned':''}${off?' paused':''}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
       ${ring(l,'a')}
       <span class="nm">${pk.n}<span class="q" data-info="${pk.k}" title="${HOWTO[pk.k]}" role="button" aria-label="Как работает ${pk.n}">?</span></span>
-      <span class="ef">${off?`выключен, не действует. Уровень ${l} сохранён`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
-      <span class="buy">${unlocked&&c!==null?`станет: ${pk.fmt(l+1)}${off?' — после включения':''}`:(why||'')}</span>
+      <span class="ef">${off?`выключен, сейчас: ${pk.fmt(0)}. Включите — ${pk.fmt(l)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
+      <span class="buy">${unlocked&&c!==null?`${off?`уровень ${l+1}: ${pk.fmt(l+1)}, когда включите`:`станет: ${pk.fmt(l+1)}`}`:(why||'')}</span>
       <span class="side">
         ${unlocked&&c!==null?`<span class="tag"><i>цена</i><b>${c}</b></span>`:''}
         ${l>0?`<span class="tog${off?' on':''}${locked?' off':''}" data-tog="${pk.k}" role="button">${off?'включить':'выключить'}</span>`:''}
