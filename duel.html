@@ -98,6 +98,10 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 .rentlab{font-size:11.5px;color:var(--dim);text-align:center}
 .rentlab b{display:block;font-size:17px;font-weight:700;color:var(--text)}
 .rentlab b u{text-decoration:none;font-size:11px;font-weight:600;color:var(--bad);margin-left:4px}
+/* пометка вне потока: иначе доска прыгает каждый раз, когда соперник щёлкает Арендой */
+.rentlab b{position:relative}
+.rentlab b i{position:absolute;left:50%;top:100%;transform:translateX(-50%);white-space:nowrap;
+  font-style:normal;font-size:11px;line-height:1.2;font-weight:600;color:var(--good)}
 .rentlab.bump b{animation:bump 1.1s cubic-bezier(.25,1.2,.4,1)}
 @keyframes bump{0%{transform:scale(1)}18%{transform:scale(1.45);color:var(--bad)}45%{transform:scale(1);color:var(--bad)}100%{transform:scale(1)}}
 .pawn{font-size:12.5px;font-weight:600;border-radius:999px;color:#fff;
@@ -153,6 +157,8 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
 .card.banned .buy{color:var(--bad)}
 .foeperks li.banned b{color:var(--bad);text-decoration:line-through}
 .foeperks li.banned i{color:var(--bad)}
+.foeperks li.paused b{opacity:.55}
+.foeperks li.paused i{color:var(--good);font-weight:600}
 .shop{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .shop>span{font-size:11.5px;color:var(--dim)}
 .card .ring{grid-row:1/4;align-self:center}
@@ -608,7 +614,8 @@ function render(){
   const inf0=inflation();
   [['rentA',me],['rentB',foe]].forEach(([id,p])=>{
     const base=rentOf(p),now=Math.round(base*inf0);
-    $(id).innerHTML=`${now}${inf0>1&&base?`<u>×${inf0.toFixed(1).replace('.',',')}</u>`:''}`;
+    const paused=p.off.rent&&p.lv.rent>0;
+    $(id).innerHTML=`${now}${inf0>1&&base?`<u>×${inf0.toFixed(1).replace('.',',')}</u>`:''}${paused?`<i>Аренда ${p.lv.rent} ур. выключена</i>`:''}`;
   });
   ['A','B'].forEach((sfx,i)=>{
     const cellIdx=ord[i],box=$('cell'+sfx);
@@ -673,7 +680,7 @@ function render(){
     return `<button class="tk${usable&&k!=='reroll'?' can':''}" data-use="${k}" ${usable&&k!=='reroll'?'':'disabled'}>
       <b>${t.n} · ${have}</b><i>${hint}</i></button>`}).join('');
   $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
-  $('foeperks').innerHTML=PERKS.map(pk=>`<li${foe.ban===pk.k?' class="banned"':''}>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':foe.off[pk.k]?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
+  $('foeperks').innerHTML=PERKS.map(pk=>`<li${foe.ban===pk.k?' class="banned"':foe.off[pk.k]?' class="paused"':''}>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':foe.off[pk.k]?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
   document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
 }
