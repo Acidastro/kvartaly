@@ -1071,7 +1071,7 @@ function showSetup(){
   $('panel').innerHTML=`<h2>Два квадрата</h2>
     <p>Монетка решает, шагнёте вы или останетесь. Дома вам платят, в гостях платите вы.</p>
     <div class="setup">
-      <div class="field"><span>Цвет вашей фишки — соперник возьмёт ${foeColor()[1]}</span><div class="swatches">${COLORS.map(([c,n])=>`<button class="sw${cfg.color===c?' on':''}" data-color="${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div></div>
+      <div class="field"><span>Цвет вашей фишки — соперник возьмёт ${foeColor()[1]}${running?'. Новый цвет — со следующей партии':''}</span><div class="swatches">${COLORS.map(([c,n])=>`<button class="sw${cfg.color===c?' on':''}" data-color="${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div></div>
       <div class="field"><span>Стартовое золото</span><div class="opts">${GOLD.map(([g,n])=>`<button class="opt${cfg.start===g?' on':''}" data-gold="${g}"><b>${g}</b>${n}</button>`).join('')}</div></div>
       <div class="field"><span>Победа по накоплениям</span><div class="opts">${GOALS.map(([g,n])=>`<button class="opt${cfg.goal===g?' on':''}" data-goal="${g}"><b>${g||'нет'}</b>${n}</button>`).join('')}</div></div>
       <div class="field"><span>Драфт перков</span><div class="opts">
@@ -1097,14 +1097,19 @@ function showSetup(){
   if($('goStats'))$('goStats').onclick=showStats;
   if($('goCancel'))$('goCancel').onclick=()=>{$('ov').hidden=true};
 }
+/* Цвета фиксируются при старте партии: выбор в меню посреди игры применяется только
+   к следующей. В сетевой партии они и так приходят с сервера и меняться не могут. */
+let tableCols=null;
 function applyColor(){
   const r=document.documentElement;
-  const [you,foe]=MP&&mp.cols?mp.cols:[cfg.color,foeColor()[0]];
+  const live=P.length>0&&!finished;
+  const [you,foe]=MP&&mp.cols?mp.cols:live&&tableCols?tableCols:[cfg.color,foeColor()[0]];
   r.style.setProperty('--you',you);
   r.style.setProperty('--foe',foe);
 }
 function resetTable(seats,seed){
-  gen++;evReset();rndS=seed|0;gameSeed=seed|0;gaveUp=false;finished=false;applyColor();renderRules();
+  gen++;evReset();rndS=seed|0;gameSeed=seed|0;gaveUp=false;finished=false;
+  tableCols=MP?null:[cfg.color,foeColor()[0]];applyColor();renderRules();
   P=seats.map((s,i)=>{const q=mk(s.name,i?'var(--foe)':'var(--you)',i,!!s.bot);q.id=i;return q});
   const plans=[['rent','office','shield','raid','route'],['rent','shield','office','route','raid'],['rent','office','raid','shield','route']];
   botPlan=plans[rnd()*plans.length|0];
