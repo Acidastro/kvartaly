@@ -784,10 +784,14 @@ async function flip(p){
     p.money+=take-r;foe.money+=keep-take;
     p.st.paid+=r;p.st.away++;foe.st.got+=keep;p.st.raid+=take;
     foe.st.peak=Math.max(foe.st.peak,r);
-    const net=take-r;
-    msg=take
-      ?`${p.name} в гостях: рента ${r}, Рэкет забирает ${take}, итого ${net>=0?'+':'−'}${Math.abs(net)}`
-      :`${p.name} в гостях: рента ${r}, владельцу достаётся ${keep}`;
+    /* В строке обе стороны: итог одного «−24» читался как угодно — чей он, гостя или хозяина. */
+    const sg=v=>(v>=0?'+':'−')+Math.abs(v);
+    const tally=`Итог: ${p.name} ${sg(take-r)}, ${foe.name} ${sg(keep-take)}`;
+    msg=!r&&!take
+      ?`${p.name} в гостях: ренты нет, никто ничего не платит`
+      :take
+        ?`${p.name} в гостях: рента ${r}, половина сгорает, Рэкет возвращает гостю ${take}. ${tally}`
+        :`${p.name} в гостях: рента ${r}, половина сгорает. ${tally}`;
     log(msg);
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
   }
