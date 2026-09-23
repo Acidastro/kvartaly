@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Два квадрата</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;800&display=swap" rel="stylesheet">
@@ -17,8 +18,10 @@
 @media (prefers-color-scheme:light){
   :root:not([data-theme="dark"]){--bg:#F3F1FA;--surf:#FFFFFF;--surf2:#F7F5FF;--line:#E2DEF3;--text:#1A1730;--dim:#6B6690;--you:#5B3DF5;--foe:#E24F26}
 }
+/* в Telegram тему задаёт клиент, а не система: светлый Telegram на тёмной ОС должен быть светлым */
+:root[data-theme="light"]{--bg:#F3F1FA;--surf:#FFFFFF;--surf2:#F7F5FF;--line:#E2DEF3;--text:#1A1730;--dim:#6B6690;--you:#5B3DF5;--foe:#E24F26}
 *{box-sizing:border-box}
-html,body{height:100%}
+html,body{height:var(--app-h,100%)}
 body{margin:0;background:var(--bg);color:var(--text);font-family:Onest,system-ui,sans-serif;
   font-size:15px;line-height:1.4;overflow:hidden;
   padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
@@ -291,7 +294,7 @@ const TOKENS={
 };
 const TK=Object.keys(TOKENS);
 const DIFFS={easy:['Новичок','Копит деньги и строится медленно'],normal:['Делец','Держит запас и ровно поднимает перки'],hard:['Акула','Смотрит, что вы строите, и отвечает: ранняя Аренда, Рэкет против вашей ренты, дальше Контора']};
-let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal'};
+let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal',draft:true};
 const GOALS=[[0,'выключена'],[450,'быстрая'],[600,'обычная'],[900,'долгая']];
 /* Темп — это только длительность пауз, на правила он не влияет. Партия в 65 кругов
    при «обычном» идёт около 4,5 минут, при «быстром» — меньше двух. */
@@ -332,7 +335,7 @@ const HOWTO={
   route:'Начисляется только в тот ход, когда вы вернулись домой из гостей. Если вы просто остались дома, бонуса нет. Хорошо сочетается с Рывком: жетон гарантирует возвращение.',
   raid:'Пока вы стоите в гостях, вы забираете у соперника часть его же ренты. Считается процентом от неё, поэтому это прямой ответ тому, кто вложился только в Аренду: при высоких уровнях визит к нему перестаёт быть убыточным.',
 };
-const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:cfg.start,built:false,seen:{},streak:0,tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
+const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:cfg.start,built:false,seen:{},streak:0,ban:null,tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
 let P=[],turn=0,over=false,busy=false,rounds=0,gen=0,logs=[],coin='—',msg='',acts=[],botPlan=[];
 const STALE={};
 /* Мультиплеер. mySeat запрещено трогать в правилах и в логике бота — у клиентов он
@@ -358,7 +361,7 @@ function stateHash(){
   let h=7;
   const add=x=>{const t=String(x);for(let i=0;i<t.length;i++)h=(Math.imul(h,31)+t.charCodeAt(i))|0};
   add(turn);add(rounds);add(rndS);
-  P.forEach(p=>{add(p.pos);add(p.money);add(p.streak);add(p.built?1:0);add(p.cd);add(p.force||'');
+  P.forEach(p=>{add(p.pos);add(p.money);add(p.streak);add(p.built?1:0);add(p.cd);add(p.force||'');add(p.ban||'');
     PK.forEach(k=>add(p.lv[k]));TK.forEach(k=>{add(p.tok[k]);add(p.tokBuys[k])})});
   return h>>>0;
 }
@@ -408,9 +411,11 @@ async function evCoin(seat){
   if(canDrive(seat))evEmit({kind:'dice',seat,seq});
   return (await evStall(seq,seat,()=>evEmit({kind:'dice',seat,seq}))).v[0]%2;
 }
-async function evAsk(seat,text,btns){
+/* def — что подставится по таймауту. По умолчанию это последняя кнопка, но там, где
+   порядок кнопок задан смыслом, а не приоритетом, ответ за отошедшего передаётся явно. */
+async function evAsk(seat,text,btns,def){
   const seq=evCur;
-  const def=btns[btns.length-1][1];
+  if(def===undefined)def=btns[btns.length-1][1];
   if(seat===mySeat){
     msg=text;
     acts=btns.map(([l,val,gh])=>[l,()=>evEmit({kind:'act',seat,seq,v:val}),gh]);
@@ -487,7 +492,8 @@ const perk=k=>PERKS.find(p=>p.k===k);
 const lvl=(p,k)=>p.lv[k];
 const val=(p,k)=>perk(k).val(p.lv[k]);
 const cost=(p,k)=>p.lv[k]<MAXLV?perk(k).cost[p.lv[k]]:null;
-const open=(p,k)=>{if(p.seen&&p.seen[k])return true;const o=perk(k).unlock(p)||p.lv[k]>0;if(o&&p.seen)p.seen[k]=true;return o};
+// бан из драфта проверяется до кэша seen: перк мог успеть открыться до раздачи запретов
+const open=(p,k)=>{if(p.ban===k)return false;if(p.seen&&p.seen[k])return true;const o=perk(k).unlock(p)||p.lv[k]>0;if(o&&p.seen)p.seen[k]=true;return o};
 const salary=p=>BASE_SALARY+val(p,'office');
 const rentOf=p=>val(p,'rent');
 let INFL_EVERY=8;   // балансовый рычаг: через сколько кругов дорожает рента и срабатывает налог
@@ -520,6 +526,9 @@ function renderRules(){
   $('rules').innerHTML=`
   <h3>Цель</h3>
   <p>Разорить соперника${g?` или первым накопить <b>${g}</b> на руках. Вложенное в перки и жетоны не считается`:''}.</p>
+
+  ${cfg.draft?`<h3>Драфт</h3>
+  <p>Перед первым броском каждый закрывает сопернику один перк на всю партию. Выбор скрыт, пока не решат оба. Закрытый перк не поднять ни разу, поэтому у каждого свой набор из четырёх, и одинакового дебюта не бывает.</p>`:''}
 
   <h3>Ход</h3>
   <ul>
@@ -619,7 +628,8 @@ function render(){
   const home=atHome(me),locked=!idleCtx||over;
   $('perks').innerHTML=PERKS.map(pk=>{
     const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k);
-    const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
+    const why=me.ban===pk.k?'закрыт соперником в драфте'
+      :!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
       :c===null?'максимум':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
     return `<div class="card${unlocked?'':' shut'}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
       ${ring(l,'a')}
@@ -654,7 +664,7 @@ function render(){
     return `<button class="tk${usable&&k!=='reroll'?' can':''}" data-use="${k}" ${usable&&k!=='reroll'?'':'disabled'}>
       <b>${t.n} · ${have}</b><i>${hint}</i></button>`}).join('');
   $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
-  $('foeperks').innerHTML=PERKS.map(pk=>`<li>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
+  $('foeperks').innerHTML=PERKS.map(pk=>`<li>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
   document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
 }
@@ -801,7 +811,8 @@ function sharkBuild(p){
   if(foe.lv.rent>=2&&p.lv.raid<foe.lv.rent&&can('raid'))return buy(p,'raid');
   if(foe.lv.raid<2&&p.lv.rent<5&&can('rent'))return buy(p,'rent');
   if(can('office'))return buy(p,'office');
-  if(p.lv.office>=6&&can('route'))return buy(p,'route');
+  // Логистика — догрузка к Конторе; если Контору закрыл драфт, она становится основной
+  if((p.lv.office>=6||!open(p,'office'))&&can('route'))return buy(p,'route');
 }
 function botBuild(p){
   if(cfg.diff==='hard')return sharkBuild(p);
@@ -827,10 +838,46 @@ function botTokens(p){
   if(cdLeft(p)===0&&atHome(p)&&p.streak<2&&p.tok.anchor>0&&danger>salary(p)*.8){p.tok.anchor--;p.st.toks++;p.cd=rounds;p.force='stay';log(`${p.name}: жетон «Якорь»`)}
   else if(cdLeft(p)===0&&!atHome(p)&&p.tok.dash>0){p.tok.dash--;p.st.toks++;p.cd=rounds;p.force='move';log(`${p.name}: жетон «Рывок»`)}
 }
+/* ---------- драфт ---------- */
+/* Перед первым броском каждый закрывает сопернику один перк на всю партию. Это
+   единственное, что отличает партии друг от друга ещё до начала: набор из четырёх
+   перков у каждого свой, поэтому заученного дебюта не остаётся.
+   Запреты выбираются по очереди, но применяются оба разом — пока второй не решил,
+   первый бан не виден ни в перках, ни в логе. Иначе второй банил бы, зная ответ. */
+function botBan(p){
+  const r=rnd();
+  if(cfg.diff==='easy')return PK[r*PK.length|0];
+  if(cfg.diff==='normal')return r<.5?'rent':'office';
+  return r<.6?'route':'office';   // Акула закрывает то, чем её чаще всего обыгрывают
+}
+async function draftPhase(){
+  if(!cfg.draft)return;
+  const bans=[];
+  for(let i=0;i<2;i++){
+    const p=P[i];
+    /* botBan двигает ГПСЧ, поэтому вызывается ровно один раз и на всех клиентах
+       одинаково — даже когда банит человек и значение уходит в запас. */
+    const dflt=botBan(p);
+    let k=dflt;
+    if(!p.bot){
+      tab='perks';
+      const v=await evAsk(i,'Закройте сопернику один перк на всю партию. Ваш выбор он увидит, только когда решит сам.',
+        PERKS.map(pk=>[pk.n,pk.k,false]),dflt);
+      if(PK.includes(v))k=v;
+    }
+    if(over)return;
+    bans[1-i]=k;   // банят сопернику, а не себе
+  }
+  P[0].ban=bans[0];P[1].ban=bans[1];
+  log(`Драфт: ${P[0].name} — без перка «${perk(bans[0]).n}», ${P[1].name} — без перка «${perk(bans[1]).n}»`);
+  msg=`Драфт закрыт. ${P[0].name}: нет «${perk(bans[0]).n}». ${P[1].name}: нет «${perk(bans[1]).n}».`;
+  acts=[];render();await sleep(1100);
+}
 /* Главный цикл партии, одинаковый у всех клиентов. Всё, что нельзя вычислить —
    монетка и решения живых игроков, — приходит событиями в общем порядке. */
 async function gameLoop(){
   try{
+    await draftPhase();
     while(!over){
       const p=P[turn];
       if(p.bot){acts=[];idleCtx=null;busy=true;msg=`Ход ${p.name}`;render();await sleep(450)}
@@ -919,6 +966,9 @@ function showSetup(){
       <div class="field"><span>Цвет вашей фишки — соперник возьмёт ${foeColor()[1]}</span><div class="swatches">${COLORS.map(([c,n])=>`<button class="sw${cfg.color===c?' on':''}" data-color="${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div></div>
       <div class="field"><span>Стартовое золото</span><div class="opts">${GOLD.map(([g,n])=>`<button class="opt${cfg.start===g?' on':''}" data-gold="${g}"><b>${g}</b>${n}</button>`).join('')}</div></div>
       <div class="field"><span>Победа по накоплениям</span><div class="opts">${GOALS.map(([g,n])=>`<button class="opt${cfg.goal===g?' on':''}" data-goal="${g}"><b>${g||'нет'}</b>${n}</button>`).join('')}</div></div>
+      <div class="field"><span>Драфт перков</span><div class="opts">
+        <button class="opt${cfg.draft?' on':''}" data-draft="1"><b>вкл</b>перед партией каждый закрывает сопернику один перк</button>
+        <button class="opt${cfg.draft?'':' on'}" data-draft="0"><b>выкл</b>все пять перков доступны обоим</button></div></div>
       <div class="field"><span>Соперник</span><div class="opts">${Object.entries(DIFFS).map(([k,[n,d]])=>`<button class="opt${cfg.diff===k?' on':''}" data-diff="${k}"><b>${n}</b>${d}</button>`).join('')}</div></div>
       <div class="field"><span>Темп — только длительность пауз, правила не меняет</span><div class="opts">${Object.entries(SPEED).map(([k,[,n]])=>`<button class="opt${cfg.speed===k?' on':''}" data-speed="${k}"><b>${n}</b></button>`).join('')}</div></div>
     </div>
@@ -930,6 +980,7 @@ function showSetup(){
   $('panel').querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{cfg.color=b.dataset.color;re()});
   $('panel').querySelectorAll('[data-gold]').forEach(b=>b.onclick=()=>{cfg.start=+b.dataset.gold;re()});
   $('panel').querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{cfg.goal=+b.dataset.goal;re()});
+  $('panel').querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>{cfg.draft=b.dataset.draft==='1';re()});
   $('panel').querySelectorAll('[data-diff]').forEach(b=>b.onclick=()=>{cfg.diff=b.dataset.diff;re()});
   $('panel').querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{cfg.speed=b.dataset.speed;re()});
   $('play').onclick=reset;
@@ -961,6 +1012,37 @@ function reset(){
 const QS=new URLSearchParams(location.search);
 const WS_URL=QS.get('ws')||'wss://telegramparser.duckdns.org/kvartaly';
 const NAMEKEY='duel-name',UIDKEY='duel-uid';
+/* ---------- Telegram Mini App ---------- */
+const TG=window.Telegram&&window.Telegram.WebApp;
+// вне Telegram SDK тоже грузится, но platform === 'unknown' — тогда работаем как обычная страница
+const inTG=!!(TG&&TG.platform&&TG.platform!=='unknown');
+const tgAtLeast=v=>{try{return inTG&&TG.isVersionAtLeast(v)}catch(e){return false}};
+/* Бот тот же, что у «Кварталов»: сервер комнат проверяет подпись initData его токеном,
+   и второй мини-апп того же бота подписывается им же. short name задаётся в BotFather. */
+const BOT_NAME='kvartaly_app_bot',TG_APP='duel';
+const tgLink=code=>`https://t.me/${BOT_NAME}/${TG_APP}?startapp=${code}`;
+function tgName(){
+  try{const u=TG&&TG.initDataUnsafe&&TG.initDataUnsafe.user;if(u&&u.first_name)return String(u.first_name).slice(0,16)}catch(e){}
+  return '';
+}
+function applyTheme(){
+  if(!inTG)return;
+  document.documentElement.dataset.theme=TG.colorScheme==='dark'?'dark':'light';
+  const bg=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  if(tgAtLeast('6.9')&&/^#[0-9a-fA-F]{6}$/.test(bg))try{TG.setHeaderColor(bg);TG.setBackgroundColor(bg)}catch(e){}
+}
+function applyViewport(){
+  if(!inTG)return;
+  const h=TG.viewportStableHeight||TG.viewportHeight;
+  if(h)document.documentElement.style.setProperty('--app-h',h+'px');
+}
+function initTG(){
+  if(!inTG)return;
+  try{TG.ready();TG.expand()}catch(e){}
+  if(tgAtLeast('7.7'))try{TG.disableVerticalSwipes()}catch(e){}   // иначе свайп по перкам сворачивает мини-апп
+  applyTheme();applyViewport();
+  try{TG.onEvent('themeChanged',()=>{applyTheme();render()});TG.onEvent('viewportChanged',applyViewport)}catch(e){}
+}
 function myUid(){
   let u=null;try{u=localStorage.getItem(UIDKEY)}catch(e){}
   if(!u){u=Math.random().toString(36).slice(2)+Date.now().toString(36);try{localStorage.setItem(UIDKEY,u)}catch(e){}}
@@ -969,7 +1051,7 @@ function myUid(){
 const clean=v=>String(v||'').replace(/\s+/g,' ').trim().slice(0,16);
 function myName(){
   let saved='';try{saved=localStorage.getItem(NAMEKEY)||''}catch(e){}
-  return clean(saved)||'Игрок';
+  return clean(saved)||tgName()||'Игрок';
 }
 function setMyName(v){
   const n=clean(v);
@@ -985,7 +1067,7 @@ function mpConnect(code){
   if(!MP){$('panel').innerHTML='<h2>Подключаюсь…</h2><p>Ищу комнату на сервере.</p>';$('ov').hidden=false}
   ws.onopen=()=>{
     mp.tries=0;
-    mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),initData:''});
+    mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),initData:(inTG&&TG.initData)||''});
     if(MP)mpSend({t:'sync',have:evLog.length});
   };
   ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(_){return}mpMsg(m)};
@@ -1031,6 +1113,7 @@ function mpRun(evs){
   if(GOALS.some(([g])=>g===o.goal))cfg.goal=o.goal;
   if(GOLD.some(([g])=>g===o.start))cfg.start=o.start;
   if(o.diff&&DIFFS[o.diff])cfg.diff=o.diff;
+  if(typeof o.draft==='boolean')cfg.draft=o.draft;
   resetTable(seats,m.seed);
   evLog=evs.slice();
   replaying=evLog.length>0;
@@ -1040,7 +1123,8 @@ function mpRun(evs){
 }
 function showLobby(){
   const isHost=!!mp.you&&mp.host===mp.you;
-  const link=location.origin+location.pathname+'?room='+mp.code;
+  const webLink=location.origin+location.pathname+'?room='+mp.code;
+  const link=inTG?tgLink(mp.code):webLink;
   const rows=mp.members.map((x,i)=>`<div class="srow"><span>${x.name}${x.uid===mp.host?' · хозяин':''}${x.uid===mp.you?' · вы':''}</span><b>${x.online?'в комнате':'отошёл'}</b><b></b></div>`).join('');
   $('panel').innerHTML=`<h2>Комната ${mp.code}</h2>
     <p>Отправьте ссылку сопернику — он сядет за этот же стол.</p>
@@ -1049,7 +1133,9 @@ function showLobby(){
         <input id="lName" type="text" maxlength="16" value="${myName().replace(/"/g,'&quot;')}"
           style="width:100%;background:var(--surf2);border:1.5px solid var(--line);border-radius:12px;padding:10px;color:inherit"></label>
     </div>
-    <div class="acts"><button class="btn" id="lCopy">Скопировать ссылку</button></div>
+    <div class="acts">${inTG?'<button class="btn" id="lShare">Позвать друга</button>':''}
+      <button class="btn${inTG?' ghost':''}" id="lCopy">Скопировать ссылку</button>
+      ${inTG?'<button class="btn ghost" id="lWeb">Для браузера</button>':''}</div>
     <div class="stats">${rows}</div>
     <div class="acts">
       ${isHost?`<button class="btn" id="lGo" ${mp.members.length<2?'disabled':''}>Начать партию</button>`:'<span>Ждём хозяина комнаты.</span>'}
@@ -1063,13 +1149,26 @@ function showLobby(){
     try{navigator.clipboard.writeText(link).then(done,()=>prompt('Ссылка для соперника:',link))}
     catch(e){prompt('Ссылка для соперника:',link)}
   };
-  if($('lGo'))$('lGo').onclick=()=>{mpSend({t:'config',bots:0,opts:{goal:cfg.goal,start:cfg.start,diff:cfg.diff}});mpSend({t:'start'})};
+  if($('lWeb'))$('lWeb').onclick=()=>{
+    try{navigator.clipboard.writeText(webLink).then(()=>{$('lWeb').textContent='Скопировано'},()=>prompt('Ссылка для браузера:',webLink))}
+    catch(e){prompt('Ссылка для браузера:',webLink)}
+  };
+  if($('lShare'))$('lShare').onclick=()=>{
+    const url=`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('Сыграем в «Два квадрата»?')}`;
+    try{TG.openTelegramLink(url)}catch(e){prompt('Ссылка для соперника:',link)}
+  };
+  if($('lGo'))$('lGo').onclick=()=>{mpSend({t:'config',bots:0,opts:{goal:cfg.goal,start:cfg.start,diff:cfg.diff,draft:cfg.draft}});mpSend({t:'start'})};
   $('lExit').onclick=()=>{const w=mp.ws;mp.ws=null;try{w&&w.close()}catch(e){}net.mode='local';showSetup()};
 }
 
+initTG();
 applyColor();
-/* Приглашение приходит ссылкой ?room=CODE и ведёт прямо в комнату, мимо настроек. */
-const joinCode=(QS.get('room')||'').toUpperCase().replace(/[^A-F0-9]/g,'').slice(0,6);
+/* Приглашение приходит ссылкой ?room=CODE или диплинком startapp=CODE и ведёт прямо в комнату, мимо настроек. */
+const joinCode=(()=>{
+  const q=QS.get('room');if(q)return q;
+  try{const sp=TG&&TG.initDataUnsafe&&TG.initDataUnsafe.start_param;if(sp)return String(sp)}catch(e){}
+  return '';
+})().toUpperCase().replace(/[^A-F0-9]/g,'').slice(0,6);
 if(joinCode)mpConnect(joinCode);
 else showSetup();
 </script>
