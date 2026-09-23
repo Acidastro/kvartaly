@@ -1017,10 +1017,11 @@ const TG=window.Telegram&&window.Telegram.WebApp;
 // вне Telegram SDK тоже грузится, но platform === 'unknown' — тогда работаем как обычная страница
 const inTG=!!(TG&&TG.platform&&TG.platform!=='unknown');
 const tgAtLeast=v=>{try{return inTG&&TG.isVersionAtLeast(v)}catch(e){return false}};
-/* Бот тот же, что у «Кварталов»: сервер комнат проверяет подпись initData его токеном,
-   и второй мини-апп того же бота подписывается им же. short name задаётся в BotFather. */
-const BOT_NAME='kvartaly_app_bot',TG_APP='duel';
-const tgLink=code=>`https://t.me/${BOT_NAME}/${TG_APP}?startapp=${code}`;
+/* У игры свой бот, и она — его главный мини-апп, поэтому приглашение идёт диплинком
+   t.me/<бот>?startapp=КОД. Сервер комнат принимает подпись initData и этого бота,
+   и бота «Кварталов» (старая ссылка t.me/kvartaly_app_bot/duel тоже живая). */
+const BOT_NAME='dva_kvadrata_bot';
+const tgLink=code=>`https://t.me/${BOT_NAME}?startapp=${code}`;
 function tgName(){
   try{const u=TG&&TG.initDataUnsafe&&TG.initDataUnsafe.user;if(u&&u.first_name)return String(u.first_name).slice(0,16)}catch(e){}
   return '';
