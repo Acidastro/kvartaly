@@ -241,6 +241,9 @@ button.pill{cursor:pointer;border:1px solid var(--line)}
   font-size:13px;color:var(--dim);padding:5px 2px;border-bottom:1px solid var(--surf2)}
 .srow b{text-align:right;color:var(--text);font-weight:600}
 .srow.head{color:var(--dim);border-bottom-color:var(--line)}
+.stats.two .srow{grid-template-columns:1fr auto}
+.stats.two .srow b{white-space:nowrap}
+.stats.two .srow b i{font-style:normal;color:var(--dim);font-weight:500;margin-left:6px}
 .srow.head b{color:var(--dim);font-weight:500}
 @media (max-height:700px){.cell{height:74px}.coin{width:54px;height:54px;font-size:24px}.who .val{font-size:22px}.stage{padding:10px}}
 @media (prefers-reduced-motion:reduce){.coin.flip{animation:none}.pawn{animation:none}.delta{animation:fadeonly 1.7s linear forwards}}
@@ -744,7 +747,7 @@ async function coverDebt(p,need){
     if(!owned.length)return false;
     if(p.bot){if(!autoSell(p))return false;continue}
     const k=await askSale(p,need,owned);
-    if(k===null){log(`${p.name}: партия сдана`);return false}
+    if(k===null){log(`${p.name}: партия сдана`);gaveUp=true;return false}
     p.lv[k]--;const back=Math.round(perk(k).cost[p.lv[k]]/2);p.money+=back;p.st.sold++;
     log(`${p.name}: продан уровень «${perk(k).n}» за ${back}`);
     render();
@@ -982,6 +985,7 @@ function end(winner,reason){
   over=true;finished=true;busy=false;acts=[];idleCtx=null;replaying=false;   // партия могла кончиться прямо в перемотке
   const win=winner===meP();
   const foe=foeP();
+  recordResult(win,reason==='capital'?'capital':gaveUp?'surrender':'bankrupt');
   const cause=reason==='capital'
     ? (win?`Вы накопили ${goal()} и выиграли экономически.`:`${foe.name} накопил ${goal()} и выиграл экономически.`)
     : (win?`${foe.name} обанкротился.`:'У вас закончились деньги и перки.');
@@ -1023,6 +1027,7 @@ function showSetup(){
     </div>
     <div class="acts"><button class="btn" id="play">${running?'Начать заново':'Играть с ботом'}</button>
       <button class="btn ghost" id="goRoom">Играть с человеком</button>
+      ${canRecord()?'<button class="btn ghost" id="goStats">Моя статистика</button>':''}
       ${running?'<button class="btn ghost" id="goCancel">Вернуться к партии</button>':''}</div>`;
   $('ov').hidden=false;
   const re=()=>{saveCfg();applyColor();showSetup()};
@@ -1034,6 +1039,7 @@ function showSetup(){
   $('panel').querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{cfg.speed=b.dataset.speed;re()});
   $('play').onclick=reset;
   $('goRoom').onclick=()=>mpConnect('');
+  if($('goStats'))$('goStats').onclick=showStats;
   if($('goCancel'))$('goCancel').onclick=()=>{$('ov').hidden=true};
 }
 function applyColor(){
@@ -1043,7 +1049,7 @@ function applyColor(){
   r.style.setProperty('--foe',foe);
 }
 function resetTable(seats,seed){
-  gen++;evReset();rndS=seed|0;finished=false;applyColor();renderRules();
+  gen++;evReset();rndS=seed|0;gameSeed=seed|0;gaveUp=false;finished=false;applyColor();renderRules();
   P=seats.map((s,i)=>{const q=mk(s.name,i?'var(--foe)':'var(--you)',i,!!s.bot);q.id=i;return q});
   const plans=[['rent','office','shield','raid','route'],['rent','shield','office','route','raid'],['rent','office','raid','shield','route']];
   botPlan=plans[rnd()*plans.length|0];
@@ -1108,6 +1114,76 @@ function setMyName(v){
   const n=clean(v);
   try{n?localStorage.setItem(NAMEKEY,n):localStorage.removeItem(NAMEKEY)}catch(e){}
   mpSend({t:'name',name:myName()});
+}
+/* ---------- история партий ---------- */
+/* Результат уходит на сервер только из Telegram: игрок там — подтверждённый Telegram ID,
+   имя не отправляем. Не дошёл (нет сети, сервер перезапускается) — ждёт в очереди и уйдёт
+   со следующей партией. Повтор той же партии сервер отбрасывает по gid. */
+let gameSeed=0,gaveUp=false;
+const API_URL=WS_URL.replace(/^ws/,'http').replace(/\/$/,'')+'/api';
+const canRecord=()=>inTG&&!!TG.initData;
+const RKEY='duel-results';
+const loadQueue=()=>{try{return JSON.parse(localStorage.getItem(RKEY))||[]}catch(e){return[]}};
+const saveQueue=q=>{try{localStorage.setItem(RKEY,JSON.stringify(q.slice(-20)))}catch(e){}};
+const side=p=>({lv:{...p.lv},ban:p.ban,off:Object.keys(p.off).filter(k=>p.off[k]),st:{...p.st},bot:!!p.bot});
+function recordResult(won,reason){
+  if(!canRecord())return;
+  const me=meP(),foe=foeP();
+  saveQueue([...loadQueue(),{
+    game:'duel',gid:MP?`${mp.code}-${gameSeed}`:`b${gameSeed}`,mode:MP?'pvp':'bot',diff:MP?null:cfg.diff,
+    draft:!!cfg.draft,goal:cfg.goal,start:cfg.start,won,reason,rounds:rounds+1,seed:gameSeed,ver:'duel-2026-09-24',
+    // журнал событий целиком: по нему партию можно переиграть и посчитать баланс на живых игроках
+    data:{me:side(me),foe:side(foe),seat:mySeat,events:evLog},
+  }]);
+  flushResults();
+}
+let flushing=false;
+async function flushResults(){
+  if(flushing||!canRecord())return;
+  flushing=true;
+  try{
+    let q=loadQueue();
+    while(q.length){
+      let r;
+      try{r=await fetch(API_URL+'/result',{method:'POST',headers:{'content-type':'application/json','x-init-data':TG.initData},body:JSON.stringify(q[0])})}
+      catch(e){break}                                   // нет сети — попробуем позже
+      if(r.status>=500||r.status===429)break;           // сервер занят — тоже позже
+      q=q.slice(1);saveQueue(q);                        // 2xx или ошибка формата: повторять бессмысленно
+    }
+  }finally{flushing=false}
+}
+async function showStats(){
+  $('panel').innerHTML='<h2>Моя статистика</h2><p>Загружаю…</p>';$('ov').hidden=false;
+  let s=null;
+  try{const r=await fetch(API_URL+'/stats?game=duel',{headers:{'x-init-data':TG.initData}});if(r.ok)s=await r.json()}catch(e){}
+  // 1 победа, 2 победы, 5 побед
+  const pl=(n,one,few,many)=>{const a=n%10,b=n%100;return `${n} ${a===1&&b!==11?one:a>=2&&a<=4&&(b<12||b>14)?few:many}`};
+  const pct=(w,g)=>g?Math.round(w/g*100)+'%':'';
+  const row=(t,a,note='')=>`<div class="srow"><span>${t}</span><b>${a}${note?`<i>${note}</i>`:''}</b></div>`;
+  const when=t=>new Date(t*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+  const why={capital:'по накоплениям',bankrupt:'банкротство',surrender:'сдача'};
+  let body;
+  if(!s)body='<p>Не удалось загрузить статистику. Проверьте связь и попробуйте ещё раз.</p>';
+  else if(!s.games)body='<p>Здесь появятся ваши партии. Сыграйте первую — результат сохранится сам.</p>';
+  else{
+    const top=Object.entries(s.perkLevels||{}).filter(([k])=>perk(k)).sort((a,b)=>b[1]-a[1])[0];
+    const st=s.streak;
+    body=`<div class="stats two">
+      ${row('партий',s.games)}${row('побед',s.wins,pct(s.wins,s.games))}
+      ${Object.entries(DIFFS).map(([k,[n]])=>s.byDiff[k].games?row('против «'+n+'»',`${s.byDiff[k].wins} из ${s.byDiff[k].games}`,pct(s.byDiff[k].wins,s.byDiff[k].games)):'').join('')}
+      ${s.byMode.pvp.games?row('с людьми',`${s.byMode.pvp.wins} из ${s.byMode.pvp.games}`,pct(s.byMode.pvp.wins,s.byMode.pvp.games)):''}
+      ${st?row('текущая серия',st.won?pl(st.count,'победа','победы','побед'):pl(st.count,'поражение','поражения','поражений'),'подряд'):''}
+      ${row('лучшая серия побед',s.bestWinStreak)}
+      ${s.avgWinRounds?row('средняя победа','за '+pl(s.avgWinRounds,'круг','круга','кругов')):''}
+      ${top?row('любимый перк',perk(top[0]).n):''}
+    </div>
+    <h3>Последние партии</h3>
+    <div class="stats two">${s.recent.map(r=>row(`${when(r.at)} · ${r.mode==='pvp'?'с человеком':'«'+(DIFFS[r.diff]||['бот'])[0]+'»'}<br><small style="color:var(--dim)">${pl(r.rounds,'круг','круга','кругов')}${r.reason?', '+why[r.reason]:''}</small>`,r.won?'победа':'поражение')).join('')}</div>`;
+  }
+  $('panel').innerHTML=`<h2>Моя статистика</h2>${body}
+    <p>Статистика хранится по вашему Telegram ID, имя не сохраняется.</p>
+    <div class="acts"><button class="btn" id="statsBack">Назад</button></div>`;
+  $('statsBack').onclick=showSetup;
 }
 const mpSend=m=>{try{if(mp.ws&&mp.ws.readyState===1)mp.ws.send(JSON.stringify(m))}catch(e){}};
 function mpConnect(code){
@@ -1239,6 +1315,7 @@ function showLobby(){
 
 initTG();
 applyColor();
+flushResults();
 /* Приглашение приходит ссылкой ?room=CODE или диплинком startapp=CODE и ведёт прямо в комнату, мимо настроек. */
 const joinCode=(()=>{
   const q=QS.get('room');if(q)return q;
