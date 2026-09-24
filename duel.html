@@ -185,9 +185,9 @@ b{font-weight:700}
 .tog{align-self:flex-start;margin-top:4px;padding:4px 10px;border-radius:8px;border:1.5px solid var(--line);font-size:11.5px;font-weight:600;color:var(--dim)}
 .tog.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 55%,transparent);background:color-mix(in srgb,var(--good) 10%,transparent)}
 .tog:disabled{opacity:.45;cursor:default}
-.up{flex:none;display:flex;flex-direction:column;align-items:center;min-width:66px;padding:7px 10px;border-radius:12px;
+.up{flex:none;display:flex;flex-direction:column;align-items:center;width:92px;padding:7px 10px;border-radius:12px;
   background:var(--you);color:var(--youInk);box-shadow:0 3px 0 var(--ink)}
-.up span{font-size:10.5px;font-weight:600}
+.up span{font-size:10.5px;font-weight:600;white-space:nowrap}
 .up b{font-family:var(--num);font-size:16px}
 .up:disabled{background:var(--surf);color:var(--dim);box-shadow:none;cursor:default}
 .howto{margin-top:6px;padding-top:7px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);line-height:1.45}
@@ -202,9 +202,9 @@ b{font-weight:700}
 .tkshop .num{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--surf);
   font-family:var(--num);font-size:15px;font-weight:700}
 .tkshop .d{font-size:12px;color:var(--dim)}
-.buy{flex:none;display:flex;flex-direction:column;align-items:center;min-width:66px;padding:7px 10px;border-radius:12px;
+.buy{flex:none;display:flex;flex-direction:column;align-items:center;width:92px;padding:7px 10px;border-radius:12px;
   background:var(--surf);border:2px solid var(--line)}
-.buy span{font-size:10.5px;font-weight:600;color:var(--dim)}
+.buy span{font-size:10.5px;font-weight:600;color:var(--dim);white-space:nowrap}
 .buy b{font-family:var(--num);font-size:16px}
 .buy:disabled{opacity:.45;cursor:default}
 
@@ -862,23 +862,26 @@ function render(){
     const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k),off=!!me.off[pk.k];
     if(me.ban===pk.k)return `<div class="pk banned"><span class="lock">${LOCK}</span><div class="pkbody">
       <span class="pname">${pk.n}</span><span class="why">закрыт соперником в драфте</span></div></div>`;
-    const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
-      :c===null?'максимум':locked?'':!home?'только дома':me.built?'уже строили в этом ходу':me.money<c?'мало денег':'';
-    const ready=unlocked&&c!==null&&!why&&!locked;
+    /* Постоянные причины (перк ещё закрыт, максимум) — строкой в карточке: они меняются раз за партию.
+       Причины хода (дома/в гостях, уже строили, мало денег) — на самой кнопке вместо «поднять»:
+       отдельной строкой они то появлялись, то пропадали, и карточка прыгала по высоте каждый ход. */
+    const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`:c===null?'максимум':'';
+    const busyWhy=locked||why?'':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
+    const ready=unlocked&&c!==null&&!why&&!busyWhy&&!locked;
     const now=off?`выключен, сейчас: ${pk.fmt(0)}. Включите — ${pk.fmt(l)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d;
     const next=unlocked&&c!==null?(off?`уровень ${l+1}: ${pk.fmt(l+1)}, когда включите`:`станет: ${pk.fmt(l+1)}`):'';
     return `<div class="pk${ready?' ready':''}${off?' paused':''}"><div class="pkrow">${ring(l,'a')}
       <div class="pkbody"><span class="pname">${pk.n}<button class="q" data-info="${pk.k}" aria-label="Как работает ${pk.n}">?</button></span>
         <span class="now">${now}</span>${next?`<span class="next">${next}</span>`:''}${why?`<span class="why">${why}</span>`:''}
         ${l>0?`<button class="tog${off?' on':''}" data-tog="${pk.k}" ${locked?'disabled':''}>${off?'включить':'выключить'}</button>`:''}</div>
-      ${c!==null&&unlocked?`<button class="up" data-k="${pk.k}" ${ready?'':'disabled'}><span>поднять</span><b>${c}</b></button>`:''}</div>
+      ${c!==null&&unlocked?`<button class="up" data-k="${pk.k}" ${ready?'':'disabled'}><span>${busyWhy||'поднять'}</span><b>${c}</b></button>`:''}</div>
       ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}</div>`;
   }).join('')+`<div class="shophead"><b>Жетоны монетки</b><span>тоже тратят действие хода</span></div>`
     +TK.map(k=>{
       const t=TOKENS[k],price=tokPrice(me,k),ok=!me.built&&!locked&&me.money>=price;
       return `<div class="tkshop"><span class="num">${me.tok[k]}</span><div class="pkbody"><span class="pname">${t.n}</span>
-        <span class="d">${t.d}${home?'':' Цена в гостях выше на 50%.'}</span></div>
-        <button class="buy" data-tok="${k}" ${ok?'':'disabled'}><span>купить</span><b>${price}</b></button></div>`}).join('');
+        <span class="d">${t.d}</span></div>
+        <button class="buy" data-tok="${k}" ${ok?'':'disabled'}><span>${home?'купить':'в гостях'}</span><b>${price}</b></button></div>`}).join('');
   $('perks').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'buy',key:b.dataset.k})});
   $('perks').querySelectorAll('[data-info]').forEach(q=>q.onclick=e=>{e.stopPropagation();openInfo=openInfo===q.dataset.info?'':q.dataset.info;render()});
   $('perks').querySelectorAll('[data-tog]').forEach(q=>q.onclick=e=>{e.stopPropagation();if(idleCtx)idleCtx.send({k:'toggle',key:q.dataset.tog})});
