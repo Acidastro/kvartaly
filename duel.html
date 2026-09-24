@@ -123,24 +123,6 @@ b{font-weight:700}
 .coin.flip{animation:spin .4s linear infinite}
 @keyframes spin{to{transform:rotateY(360deg)}}
 
-/* строка итога под монеткой: одна высота во всех состояниях, чтобы экран не прыгал */
-.strip{display:flex;align-items:center;justify-content:center;gap:10px;height:36px;padding:0 12px;border-radius:12px;
-  background:var(--surf2);font-size:13px;overflow:hidden;transition:opacity .2s}
-.strip.good{background:color-mix(in srgb,var(--good) 14%,var(--surf2))}
-.strip.bad{background:color-mix(in srgb,var(--bad) 14%,var(--surf2))}
-.strip.stale{opacity:.5}
-.strip.empty{visibility:hidden}
-.strip .it{flex:none;white-space:nowrap;color:var(--dim)}
-.strip .it.tight{margin-left:-6px}
-/* обрезается имя, сумма остаётся всегда: «Конста… +11» */
-.strip .amt{display:flex;min-width:0;white-space:nowrap;font-weight:700}
-.strip .amt .an{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.strip .amt .av{flex:none}
-.strip .amt.fix{flex:none}
-/* имена с префиксом: pos/neg — бейджи денег (с фоном), up — кнопка «поднять» у перков */
-.strip .amt.s-gain{color:var(--good)}.strip .amt.s-loss{color:var(--bad)}.strip .amt.s-even{color:var(--text)}
-.strip .ask{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-
 /* жетоны под полем: название и счётчик, без подписей */
 .toks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .tk{display:flex;align-items:center;justify-content:space-between;gap:6px;height:44px;padding:0 8px 0 12px;border-radius:12px;
@@ -159,6 +141,7 @@ b{font-weight:700}
 .main:disabled{opacity:.55;cursor:default}
 .main.alt{background:var(--surf);color:var(--text);border:2px solid var(--line);box-shadow:none;font-size:15px}
 .row .main{flex:1;min-width:0}
+.asknote{margin:0;text-align:center;font-size:13.5px;font-weight:600;color:var(--bad)}
 .statusline{display:flex;align-items:center;justify-content:center;gap:10px;height:56px;padding:0 16px;border-radius:16px;
   background:color-mix(in srgb,var(--c) 12%,var(--surf));font-size:15px;font-weight:600}
 .statusline.a{--c:var(--you)}.statusline.b{--c:var(--foe)}
@@ -395,7 +378,6 @@ b{font-weight:700}
       <div class="coin" id="coin" role="img" aria-label="Монетка: ещё не брошена">?</div>
       <span class="chip r" id="chip1"><b>1</b> — переход</span>
     </div>
-    <div class="strip" id="strip" role="status"></div>
   </div>
 
   <div class="toks" id="toks"></div>
@@ -844,15 +826,6 @@ function render(){
     c.innerHTML=`<span><b>${v}</b> — ${v?'переход':'на месте'}</span>`
       +(costs?`<b class="cv ${x>0?'g':x<0?'b':'z'}">${x===0?'0':sgn(x)}</b>`:'');
   });
-  // строка итога под монеткой: вопрос игроку важнее итога броска. Имена — с точки зрения
-  // смотрящего («Вы»), поэтому в данных лежат места за столом, а не готовые строки
-  const st=$('strip'),nm=seat=>seat===mySeat?'Вы':escHtml(P[seat].name);
-  if(askText){st.className='strip';st.innerHTML=`<span class="ask">${escHtml(askText)}</span>`}
-  else if(evCard){
-    st.className='strip'+(evCard.tone?' '+evCard.tone:'')+(evCard.stale?' stale':'');
-    st.innerHTML=evCard.items.map(x=>x.seat===undefined?`<span class="it${x.tight?' tight':''}">${escHtml(x.t)}</span>`
-      :`<span class="amt ${x.v>0?'s-gain':x.v<0?'s-loss':'s-even'}${x.seat===mySeat?' fix':''}"><span class="an">${nm(x.seat)}</span>&nbsp;<span class="av">${sgn(x.v)}</span></span>`).join('');
-  } else {st.className='strip empty';st.innerHTML=''}   // до первого броска: места не отдаём, чтобы экран не съехал
   // верхняя строка
   $('round').textContent=rounds+1;
   const left=INFL_EVERY-(rounds%INFL_EVERY);
@@ -868,6 +841,8 @@ function render(){
   const mine=!!idleCtx&&!over;
   if(acts.length&&!mine){
     const two=acts.length<=2,row=document.createElement('div');row.className=two?'row':'action';
+    // «Нечем заплатить 50» — без суммы долга список «продать уровень» непонятен; вопрос «перебросить?» ясен из кнопок
+    if(!two&&askText){const n=document.createElement('p');n.className='asknote';n.textContent=askText;a.appendChild(n)}
     acts.forEach(([label,fn,ghost])=>{const b=document.createElement('button');b.className='main'+(ghost?' alt':'');b.textContent=label;b.onclick=fn;row.appendChild(b)});
     a.appendChild(row);
   } else if(mine||(P[turn]===me&&!over)){
@@ -977,7 +952,7 @@ async function coverDebt(p,need){
   return true;
 }
 async function flip(p){
-  const g=gen;busy=true;acts=[];note='';lastFlip=null;if(evCard){evCard.stale=true;evCard.deltas=null}render();
+  const g=gen;busy=true;acts=[];note='';lastFlip=null;evCard=null;render();
   const alive=()=>g===gen&&!over;
   let v;
   // значение просим сразу, анимация крутится параллельно — сетевая задержка прячется под ней
@@ -994,7 +969,7 @@ async function flip(p){
       let again;
       if(p.bot){again=true;await sleep(400)}
       else again=await evAsk(p.id,'Перебросить? Иначе — в гости',
-        [['Перебросить',true],['Оставить',false,true]]);
+        [['Перебросить',true],['Не перебрасывать',false,true]]);
       if(!alive())return;
       if(again){
         p.tok.reroll--;p.st.toks++;p.cd=rounds;log(`${p.name}: переброс монетки`);sfx.token();
@@ -1022,8 +997,7 @@ async function flip(p){
     let gain=salary(p);let extra='';
     if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
     p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
-    evCard={tone:'good',items:[{t:'Зарплата дома'},{seat:p.id,v:gain},...(gain>salary(p)?[{t:`Логистика +${gain-salary(p)}`}]:[])],
-      deltas:{[p.id]:gain}};
+    evCard={deltas:{[p.id]:gain}};
     if(p===meP())sfx.gain();
   } else {
     const foe=P[p.pos],r=payFor(p,foe);
@@ -1044,10 +1018,7 @@ async function flip(p){
         ?`${p.name}: в гостях, рента ${r}, половина сгорает, Рэкет возвращает гостю ${take}. ${tally}`
         :`${p.name}: в гостях, рента ${r}, половина сгорает. ${tally}`;
     log(msg);
-    evCard=!r&&!take?{tone:'',items:[{t:'Ренты нет'}],deltas:null}
-      // Рэкет — вплотную к сумме гостя: «Бот −18 (Рэкет +2)» — чей он и что уже внутри суммы
-      :{tone:'bad',deltas:{[p.id]:take-r,[foe.id]:keep-take},items:[{t:`Рента ${r}`},{seat:p.id,v:take-r},
-        ...(take?[{t:`(Рэкет +${take})`,tight:true}]:[]),{seat:foe.id,v:keep-take},...(r-keep>0?[{t:`сгорело ${r-keep}`}]:[])]};
+    evCard=!r&&!take?null:{deltas:{[p.id]:take-r,[foe.id]:keep-take}};
     if(r||take){if(p===meP())sfx.pay();else if(foe===meP())sfx.gain()}
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
   }
