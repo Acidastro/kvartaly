@@ -113,6 +113,10 @@ b{font-weight:700}
 .chip.hit-a{background:var(--you);color:var(--youInk);font-weight:700}
 .chip.hit-b{background:var(--foe);color:var(--foeInk);font-weight:700}
 .chip.hit-a b,.chip.hit-b b{color:inherit}
+/* до броска: вторая строка — цена исхода для денег игрока */
+.chip.cost{display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 12px 6px;border-radius:10px;line-height:1.25}
+.chip .cv{font-family:var(--num);font-size:14px}
+.chip .cv.g{color:var(--good)}.chip .cv.b{color:var(--bad)}.chip .cv.z{color:var(--dim)}
 .coin{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:var(--gold);
   box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 4px 0 var(--goldEdge);
   font-family:var(--num);font-size:24px;font-weight:800;color:#2B1F00}
@@ -122,10 +126,10 @@ b{font-weight:700}
 /* строка итога под монеткой: одна высота во всех состояниях, чтобы экран не прыгал */
 .strip{display:flex;align-items:center;justify-content:center;gap:10px;height:36px;padding:0 12px;border-radius:12px;
   background:var(--surf2);font-size:13px;overflow:hidden;transition:opacity .2s}
-.strip.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 10px}
 .strip.good{background:color-mix(in srgb,var(--good) 14%,var(--surf2))}
 .strip.bad{background:color-mix(in srgb,var(--bad) 14%,var(--surf2))}
 .strip.stale{opacity:.5}
+.strip.empty{visibility:hidden}
 .strip .it{flex:none;white-space:nowrap;color:var(--dim)}
 /* обрезается имя, сумма остаётся всегда: «Конста… +11» */
 .strip .amt{display:flex;min-width:0;white-space:nowrap;font-weight:700}
@@ -134,10 +138,6 @@ b{font-weight:700}
 .strip .amt.fix{flex:none}
 /* имена с префиксом: pos/neg — бейджи денег (с фоном), up — кнопка «поднять» у перков */
 .strip .amt.s-gain{color:var(--good)}.strip .amt.s-loss{color:var(--bad)}.strip .amt.s-even{color:var(--text)}
-.strip .cl{min-width:0;display:flex;align-items:center;justify-content:center;gap:6px}
-.strip .cl .sq{width:8px;height:8px;border-radius:2px}
-.strip .cl .sq.a{background:var(--you)}.strip .cl .sq.b{background:var(--foe)}
-.strip .cl .ell{font-weight:600}
 .strip .ask{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 
 /* жетоны под полем: название и счётчик, без подписей */
@@ -515,8 +515,6 @@ const PERKS=[
    cost:[50,70,90,115,150,190,240,300,375,470], unlock:p=>total(p)>=3},
 ];
 const PK=PERKS.map(p=>p.k);
-// «Вы без Логистики»: в строке итога драфта название нужно в родительном падеже
-const GEN={rent:'Аренды',office:'Конторы',shield:'Страховки',route:'Логистики',raid:'Рэкета'};
 const total=p=>PK.reduce((s,k)=>s+p.lv[k],0);
 const HOWTO={
   rent:'Срабатывает, когда соперник заканчивает ход на вашей клетке. Он платит ренту этого уровня, но вам достаётся только половина: вторая половина сгорает. Поэтому Аренда разоряет соперника быстрее всех, а копить деньги помогает плохо.',
@@ -782,6 +780,16 @@ const cls=p=>p===meP()?'a':'b';
 const sgn=v=>(v>=0?'+':'−')+Math.abs(v);
 const plural=(n,one,few,many)=>{const a=n%10,b=n%100;return a===1&&b!==11?one:a>=2&&a<=4&&(b<12||b>14)?few:many};
 const SPEED_LABEL={slow:'×½',normal:'×1',fast:'×2',instant:'⚡'};
+/* Цена исхода для чипов монетки: чем кончится для денег игрока 0 и 1. Те же формулы, что
+   в flip(), — зарплата и Логистика дома, рента с инфляцией и Страховкой минус Рэкет в гостях.
+   Ничего не меняет в партии. На третьем ходу на одной клетке 0 тоже станет переходом. */
+function outcome(p,v){
+  const move=v===1||p.streak>=2,endHome=move?!atHome(p):atHome(p);
+  if(endHome)return salary(p)+(move&&val(p,'route')?val(p,'route'):0);
+  const owner=P[move?1-p.pos:p.pos],r=payFor(p,owner),keep=Math.round(r*RENT_KEEP);
+  const raid=Math.round(rentOf(owner)*inflation()*.12*(p.off.raid?0:p.lv.raid));
+  return Math.min(raid,owner.money+keep)-r;
+}
 function render(){
   if(replaying)return;
   const me=meP(),foe=foeP();
@@ -824,19 +832,23 @@ function render(){
   $('coin').textContent=coin;$('coin').classList.toggle('flip',busy&&!note);
   $('coin').setAttribute('aria-label',coin==='?'?'Монетка: ещё не брошена':`Монетка: выпало ${coin}`);
   const hit=note&&lastFlip?(note==='переход'?1:0):-1;
-  [0,1].forEach(v=>{$('chip'+v).className='chip '+(v?'r':'l')+(hit===v?' hit-'+lastFlip.c:'')});
+  // до броска в свой ход — второй строкой цена исхода; после броска чипы снова однострочные
+  const costs=idleCtx&&idleCtx.p===me&&!busy&&!over?[outcome(me,0),outcome(me,1)]:null;
+  [0,1].forEach(v=>{
+    const c=$('chip'+v),x=costs&&costs[v];
+    c.className='chip '+(v?'r':'l')+(hit===v?' hit-'+lastFlip.c:'')+(costs?' cost':'');
+    c.innerHTML=`<span><b>${v}</b> — ${v?'переход':'на месте'}</span>`
+      +(costs?`<b class="cv ${x>0?'g':x<0?'b':'z'}">${x===0?'0':sgn(x)}</b>`:'');
+  });
   // строка итога под монеткой: вопрос игроку важнее итога броска. Имена — с точки зрения
   // смотрящего («Вы»), поэтому в данных лежат места за столом, а не готовые строки
   const st=$('strip'),nm=seat=>seat===mySeat?'Вы':escHtml(P[seat].name);
   if(askText){st.className='strip';st.innerHTML=`<span class="ask">${escHtml(askText)}</span>`}
-  else if(evCard&&evCard.cols){
-    st.className='strip two';
-    st.innerHTML=evCard.cols.slice().sort((x,y)=>(y.seat===mySeat)-(x.seat===mySeat)).map(c=>`<span class="cl">${c.seat!==undefined?`<i class="sq ${c.seat===mySeat?'a':'b'}"></i>`:''}<span class="ell">${c.seat!==undefined?nm(c.seat)+' ':''}${escHtml(c.t)}</span></span>`).join('');
-  } else if(evCard){
+  else if(evCard){
     st.className='strip'+(evCard.tone?' '+evCard.tone:'')+(evCard.stale?' stale':'');
     st.innerHTML=evCard.items.map(x=>x.seat===undefined?`<span class="it">${escHtml(x.t)}</span>`
       :`<span class="amt ${x.v>0?'s-gain':x.v<0?'s-loss':'s-even'}${x.seat===mySeat?' fix':''}"><span class="an">${nm(x.seat)}</span>&nbsp;<span class="av">${sgn(x.v)}</span></span>`).join('');
-  } else {st.className='strip';st.innerHTML=''}
+  } else {st.className='strip empty';st.innerHTML=''}   // до первого броска: места не отдаём, чтобы экран не съехал
   // верхняя строка
   $('round').textContent=rounds+1;
   const left=INFL_EVERY-(rounds%INFL_EVERY);
@@ -1140,7 +1152,6 @@ async function draftPhase(){
   }
   draftUI=null;$('ov').hidden=true;
   P[0].ban=bans[0];P[1].ban=bans[1];
-  evCard={cols:[0,1].map(i=>({seat:i,t:`без ${GEN[bans[i]]}`}))};
   log(`Драфт: ${P[0].name} — без перка «${perk(bans[0]).n}», ${P[1].name} — без перка «${perk(bans[1]).n}»`);
   msg=`Драфт закрыт. ${P[0].name}: нет «${perk(bans[0]).n}». ${P[1].name}: нет «${perk(bans[1]).n}».`;
   acts=[];render();sfx.reveal();await sleep(1100);
@@ -1357,7 +1368,7 @@ function resetTable(seats,seed,t){
   botPlan=plans[rnd()*plans.length|0];
   turn=0;over=false;busy=false;rounds=0;logs=[];coin='?';shown.length=0;idleCtx=null;note='';
   lastFlip=null;askText='';draftUI=null;
-  evCard={cols:[{t:`У каждого по ${table.start}`},{t:table.goal?`Победа при ${table.goal}`:'Без победы по накоплениям'}]};
+  evCard=null;
   $('ov').hidden=true;
 }
 function reset(){
