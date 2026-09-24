@@ -1052,23 +1052,49 @@ function buyToken(p,k){
   if(p===meP())sfx.buy();else sfx.foeBuy();
   log(`${p.name}: куплен жетон «${t.n}» за ${price}${atHome(p)?'':' (в гостях, с наценкой)'}`);
 }
-/* «Акула» — линия, собранная из живых партий, а не из прогонов.
-   Первые пять уровней Аренды окупаются, дальше кривая ломается; на чужой Рэкет
-   отвечает Рэкетом; Контора приоритетнее Логистики, потому что платит на каждом
-   ходе дома, а не только на возвращении. Купленную Аренду не продаёт никогда:
-   вернуть половину вложенного хуже, чем терпеть урон от Рэкета. */
+/* «Акула». Цель по накоплениям считает только наличные, поэтому прежняя Акула проигрывала
+   гонку, а не игру: гнала Логистику или Контору до 10-го уровня (1600–1900 монет) и так и
+   не копила. Теперь каждый уровень покупается, только если успеет окупиться до финиша, —
+   из подходящих самый быстроокупаемый, — а ближе к цели она сама перестаёт строить.
+   На стенде против линии игрока из живых партий (Логистика, Аренда, Рэкет, копит у финиша)
+   игрок выигрывал у прежней 19 из 40, у этой — 7 из 40. */
+/* Ожидаемый доход игрока за его ход — грубо, по вероятностям исходов монетки: дома примерно
+   половину ходов, возвращается из гостей примерно в трети, соперник заходит в гости в половине
+   своих ходов. Нужен только для сравнения покупок и оценки, скоро ли финиш. */
+function flowOf(q){
+  const f=foeOf(q),inf=inflation(),fRaid=f.off.raid?0:f.lv.raid,myRaid=q.off.raid?0:q.lv.raid;
+  return .5*salary(q)+.3*val(q,'route')
+    +.25*rentOf(q)*inf*(1-.24*fRaid)          // половина ренты хозяину минус чужой Рэкет, гость заходит в половине ходов
+    -.5*payFor(q,f)+.5*rentOf(f)*inf*.12*myRaid;
+}
+/* Сколько ходов осталось до того, как кто-то доберётся до цели по накоплениям. Цель считает
+   только наличные: уровень, который не успеет вернуть свою цену до финиша, — подарок сопернику.
+   Без цели партия идёт до банкротства, горизонт бесконечен. */
+function horizon(){
+  if(!goal())return Infinity;
+  return Math.min(...P.map(q=>Math.max(0,goal()-q.money)/Math.max(10,flowOf(q))));
+}
+// выгода уровня — относительно соперника: Аренда ценна ещё и тем, что он теряет на ренте
+function levelGain(p,k){
+  const f=foeOf(p),before=flowOf(p)-flowOf(f);
+  p.lv[k]++;const after=flowOf(p)-flowOf(f);p.lv[k]--;
+  return after-before;
+}
 function sharkBuild(p){
   const foe=foeOf(p);
   // владельцу остаётся 50% ренты, Рэкет соперника забирает 12% за уровень: с 5-го уровня Аренда в минусе
   if(p.lv.rent>0&&!p.off.rent!==(foe.lv.raid<5||!!foe.off.raid))togglePerk(p,'rent');
   if(p.built||!atHome(p))return;
-  const reserve=payFor(p,foe)+30;
-  const can=k=>{const c=cost(p,k);return c!==null&&open(p,k)&&p.money-c>=reserve};
-  if(foe.lv.rent>=2&&p.lv.raid<foe.lv.rent&&can('raid'))return buy(p,'raid');
-  if(foe.lv.raid<2&&p.lv.rent<5&&can('rent'))return buy(p,'rent');
-  if(can('office'))return buy(p,'office');
-  // Логистика — догрузка к Конторе; если Контору закрыл драфт, она становится основной
-  if((p.lv.office>=6||!open(p,'office'))&&can('route'))return buy(p,'route');
+  const reserve=payFor(p,foe)+30,H=horizon();
+  let best=null,bestPay=Infinity;
+  for(const k of PK){
+    const c=cost(p,k);
+    if(c===null||!open(p,k)||p.off[k]||p.money-c<reserve)continue;
+    const g=levelGain(p,k);if(g<=0)continue;
+    const pay=c/g;   // за сколько ходов уровень вернёт свою цену
+    if(pay<.7*H&&pay<bestPay){best=k;bestPay=pay}
+  }
+  if(best)buy(p,best);
 }
 function botBuild(p){
   if(table.diff==='hard')return sharkBuild(p);
