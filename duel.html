@@ -828,12 +828,15 @@ function render(){
       `<span class="pawn ${cls(q)} ell${atHome(q)?'':' guest'}" id="pawn${q===me?0:1}">${q===me?'Вы':escHtml(q.name)}</span>`).join('');
   });
   flushHits();
-  // монетка и чипы исхода: залит тот, что выпал, цветом бросавшего
-  $('coin').textContent=coin;$('coin').classList.toggle('flip',busy&&!note);
-  $('coin').setAttribute('aria-label',coin==='?'?'Монетка: ещё не брошена':`Монетка: выпало ${coin}`);
-  const hit=note&&lastFlip?(note==='переход'?1:0):-1;
   // до броска в свой ход — второй строкой цена исхода; после броска чипы снова однострочные
   const costs=idleCtx&&idleCtx.p===me&&!busy&&!over?[outcome(me,0),outcome(me,1)]:null;
+  /* Монетка и заливка чипа — итог броска. В свой ход до броска их нет (как на макете: «?»
+     и серые чипы): прошлый бросок соперника виден в строке итога, а залитый его цветом чип
+     съедал красную цену исхода на малиновой фишке. */
+  const face=costs?'?':coin;
+  $('coin').textContent=face;$('coin').classList.toggle('flip',busy&&!note);
+  $('coin').setAttribute('aria-label',face==='?'?'Монетка: ещё не брошена':`Монетка: выпало ${face}`);
+  const hit=!costs&&note&&lastFlip?(note==='переход'?1:0):-1;
   [0,1].forEach(v=>{
     const c=$('chip'+v),x=costs&&costs[v];
     c.className='chip '+(v?'r':'l')+(hit===v?' hit-'+lastFlip.c:'')+(costs?' cost':'');
