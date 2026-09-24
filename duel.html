@@ -131,6 +131,7 @@ b{font-weight:700}
 .strip.stale{opacity:.5}
 .strip.empty{visibility:hidden}
 .strip .it{flex:none;white-space:nowrap;color:var(--dim)}
+.strip .it.tight{margin-left:-6px}
 /* обрезается имя, сумма остаётся всегда: «Конста… +11» */
 .strip .amt{display:flex;min-width:0;white-space:nowrap;font-weight:700}
 .strip .amt .an{min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -849,7 +850,7 @@ function render(){
   if(askText){st.className='strip';st.innerHTML=`<span class="ask">${escHtml(askText)}</span>`}
   else if(evCard){
     st.className='strip'+(evCard.tone?' '+evCard.tone:'')+(evCard.stale?' stale':'');
-    st.innerHTML=evCard.items.map(x=>x.seat===undefined?`<span class="it">${escHtml(x.t)}</span>`
+    st.innerHTML=evCard.items.map(x=>x.seat===undefined?`<span class="it${x.tight?' tight':''}">${escHtml(x.t)}</span>`
       :`<span class="amt ${x.v>0?'s-gain':x.v<0?'s-loss':'s-even'}${x.seat===mySeat?' fix':''}"><span class="an">${nm(x.seat)}</span>&nbsp;<span class="av">${sgn(x.v)}</span></span>`).join('');
   } else {st.className='strip empty';st.innerHTML=''}   // до первого броска: места не отдаём, чтобы экран не съехал
   // верхняя строка
@@ -1044,8 +1045,9 @@ async function flip(p){
         :`${p.name}: в гостях, рента ${r}, половина сгорает. ${tally}`;
     log(msg);
     evCard=!r&&!take?{tone:'',items:[{t:'Ренты нет'}],deltas:null}
-      :{tone:'bad',deltas:{[p.id]:take-r,[foe.id]:keep-take},items:[{t:`Рента ${r}`},{seat:p.id,v:take-r},{seat:foe.id,v:keep-take},
-        ...(take?[{t:`Рэкет +${take}`}]:[]),...(r-keep>0?[{t:`сгорело ${r-keep}`}]:[])]};
+      // Рэкет — вплотную к сумме гостя: «Бот −18 (Рэкет +2)» — чей он и что уже внутри суммы
+      :{tone:'bad',deltas:{[p.id]:take-r,[foe.id]:keep-take},items:[{t:`Рента ${r}`},{seat:p.id,v:take-r},
+        ...(take?[{t:`(Рэкет +${take})`,tight:true}]:[]),{seat:foe.id,v:keep-take},...(r-keep>0?[{t:`сгорело ${r-keep}`}]:[])]};
     if(r||take){if(p===meP())sfx.pay();else if(foe===meP())sfx.gain()}
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
   }
