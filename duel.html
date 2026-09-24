@@ -485,10 +485,12 @@ const PERKS=[
   {k:'office',n:'Контора',d:'Прибавка к зарплате, которую вы получаете дома.',
    val:l=>20*l, fmt:l=>`зарплата ${BASE_SALARY+20*l}`,
    cost:[35,50,65,85,110,140,180,230,295,375], unlock:()=>true},
-  {k:'shield',n:'Страховка',d:'Скидка на ренту, которую вы платите сопернику.',
-   val:l=>6*l, fmt:l=>{const r=P[1]?Math.round(rentOf(P[1])*inflation()):0;
-     return l?`на ${6*l}% меньше${r?`: ${Math.max(0,Math.round(r*(1-6*l/100)))} вместо ${r}`:''}`:`платите полную ренту${r?`: ${r}`:''}`},
-   cost:[40,55,75,95,120,155,200,255,325,410], unlock:()=>true},
+  /* Демпинг заменил Страховку — по всем замерам самый слабый перк. Это ответ Конторе:
+     у неё не было контригры, зарплата капала, что бы ни делал соперник. Срезанное сгорает,
+     а не переходит владельцу: в гонке к цели перевод удваивал бы разрыв. */
+  {k:'dump',n:'Демпинг',d:'Срезает зарплату соперника, пока вы оба дома.',
+   val:l=>10*l, fmt:l=>l?`его зарплата −${10*l}%`:'не действует',
+   cost:[50,70,90,115,150,190,240,300,375,470], unlock:p=>total(p)>=3},
   {k:'route',n:'Логистика',d:'Бонус за возвращение домой с чужого квадрата.',
    val:l=>36*l, fmt:l=>l?`+${36*l} за возвращение`:'бонуса нет',
    cost:[45,60,80,105,135,175,225,285,360,450], unlock:p=>total(p)>=3},
@@ -502,11 +504,11 @@ const total=p=>PK.reduce((s,k)=>s+p.lv[k],0);
 const HOWTO={
   rent:'Срабатывает, когда соперник заканчивает ход на вашей клетке. Он платит ренту этого уровня, но вам достаётся только половина: вторая половина сгорает. Поэтому Аренда разоряет соперника быстрее всех, а копить деньги помогает плохо.',
   office:'Зарплата приходит каждый раз, когда ваш ход закончился дома, неважно, шагнули вы туда или остались. Уровень добавляет к базовым 60 фиксированную сумму. Это самый надёжный доход: он не зависит от соперника.',
-  shield:'Уменьшает ренту, которую платите вы, оказавшись в гостях. Считается процентом от суммы уже с учётом инфляции. Чем выше Аренда у соперника, тем больше экономия, а против бедного соперника почти бесполезна.',
+  dump:'Срабатывает, когда соперник получает зарплату дома, а вы в этот момент тоже дома: никто ни к кому не пришёл. Его зарплата уменьшается на процент этого уровня, срезанное сгорает. На Логистику не действует. Чем больше у соперника Контора и чем чаще он отсиживается дома, тем больнее. Ответ сопернику — уходить в гости, но там он теряет зарплату и платит вашу ренту.',
   route:'Начисляется только в тот ход, когда вы вернулись домой из гостей. Если вы просто остались дома, бонуса нет. Хорошо сочетается с Рывком: жетон гарантирует возвращение.',
   raid:'Пока вы стоите в гостях, вы забираете у соперника часть его же ренты. Считается процентом от неё, поэтому это прямой ответ тому, кто вложился только в Аренду: при высоких уровнях визит к нему перестаёт быть убыточным.',
 };
-const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:table.start,built:false,seen:{},streak:0,ban:null,off:{},tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
+const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:table.start,built:false,seen:{},streak:0,ban:null,off:{},tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,dump:0,dumped:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
 let P=[],turn=0,over=false,busy=false,rounds=0,gen=0,logs=[],coin='—',msg='',acts=[],botPlan=[];
 const STALE={};
 /* Мультиплеер. mySeat запрещено трогать в правилах и в логике бота — у клиентов он
@@ -666,7 +668,9 @@ const salary=p=>BASE_SALARY+val(p,'office');
 const rentOf=p=>val(p,'rent');
 let INFL_EVERY=8;   // балансовый рычаг: через сколько кругов дорожает рента и срабатывает налог
 const inflation=()=>1+.1*Math.floor(rounds/INFL_EVERY);
-const payFor=(p,foe)=>Math.max(0,Math.round(rentOf(foe)*inflation()*(1-val(p,'shield')/100)));
+const payFor=(p,foe)=>Math.max(0,Math.round(rentOf(foe)*inflation()));
+// сколько Демпинг соперника срежет с зарплаты p: только если соперник в этот момент тоже дома
+const dumpCut=p=>{const f=foeOf(p);return atHome(f)?Math.round(salary(p)*Math.min(1,val(f,'dump')/100)):0};
 const atHome=p=>P[p.pos]===p;
 const foeOf=p=>P[0]===p?P[1]:P[0];
 const tokPrice=(p,k)=>Math.round(TOKENS[k].price*(1+.6*p.tokBuys[k])*(atHome(p)?1:1.5)/5)*5;
@@ -708,7 +712,7 @@ function renderRules(){
   <p>Разорить соперника${g?` или первым накопить <b>${g}</b> на руках. Вложенное в перки и жетоны не считается`:''}.</p>
 
   ${table.draft?`<h3>Драфт</h3>
-  <p>Перед первым броском каждый закрывает сопернику один перк на всю партию. Выбор скрыт, пока не решат оба. Закрытый перк не поднять ни разу, поэтому у каждого свой набор из четырёх, и одинакового дебюта не бывает.</p>`:''}
+  <p>Перед первым броском каждый закрывает сопернику один перк на всю партию. Выбор скрыт, пока не решат оба. Закрытый перк не поднять ни разу, поэтому у каждого свой набор из четырёх, и одинакового дебюта не бывает.${table.goal?'':' Без победы по накоплениям Аренду закрыть нельзя: только рентой можно разорить соперника.'}</p>`:''}
 
   <h3>Ход</h3>
   <ul>
@@ -728,11 +732,11 @@ function renderRules(){
   <ul>
     <li><b>Аренда</b> — сколько платит соперник у вас в гостях.</li>
     <li><b>Контора</b> — прибавка к зарплате.</li>
-    <li><b>Страховка</b> — скидка на ренту, которую платите вы.</li>
+    <li><b>Демпинг</b> — срезает зарплату соперника, пока вы оба дома.</li>
     <li><b>Логистика</b> — бонус за возвращение домой из гостей.</li>
     <li><b>Рэкет</b> — в гостях забираете долю ренты соперника.</li>
   </ul>
-  <p class="mut">У каждого 10 уровней. Логистика и Рэкет открываются после трёх уровней в любых перках. Купленный перк можно выключить и снова включить в любой свой ход, это не тратит действие. Например, Аренду стоит выключать против сильного Рэкета: с 5-го уровня он забирает с вашей ренты больше, чем достаётся вам.</p>
+  <p class="mut">У каждого 10 уровней. Логистика, Рэкет и Демпинг открываются после трёх уровней в любых перках. Купленный перк можно выключить и снова включить в любой свой ход, это не тратит действие. Например, Аренду стоит выключать против сильного Рэкета: с 5-го уровня он забирает с вашей ренты больше, чем достаётся вам.</p>
 
   <h3>Жетоны</h3>
   <ul>
@@ -764,11 +768,11 @@ const sgn=v=>(v>=0?'+':'−')+Math.abs(v);
 const plural=(n,one,few,many)=>{const a=n%10,b=n%100;return a===1&&b!==11?one:a>=2&&a<=4&&(b<12||b>14)?few:many};
 const SPEED_LABEL={slow:'×½',normal:'×1',fast:'×2',instant:'⚡'};
 /* Цена исхода для чипов монетки: чем кончится для денег игрока 0 и 1. Те же формулы, что
-   в flip(), — зарплата и Логистика дома, рента с инфляцией и Страховкой минус Рэкет в гостях.
+   в flip(), — зарплата минус Демпинг и плюс Логистика дома, рента с инфляцией минус Рэкет в гостях.
    Ничего не меняет в партии. На третьем ходу на одной клетке 0 тоже станет переходом. */
 function outcome(p,v){
   const move=v===1||p.streak>=2,endHome=move?!atHome(p):atHome(p);
-  if(endHome)return salary(p)+(move&&val(p,'route')?val(p,'route'):0);
+  if(endHome)return salary(p)-dumpCut(p)+(move&&val(p,'route')?val(p,'route'):0);
   const owner=P[move?1-p.pos:p.pos],r=payFor(p,owner),keep=Math.round(r*RENT_KEEP);
   const raid=Math.round(rentOf(owner)*inflation()*.12*(p.off.raid?0:p.lv.raid));
   return Math.min(raid,owner.money+keep)-r;
@@ -994,9 +998,11 @@ async function flip(p){
   render();animateMove(p,beforeRect,v===0);setTimeout(()=>{p.jump=false},280);await sleep(500);if(!alive())return;
   p.streak=(wasHome===atHome(p))?p.streak+1:1;
   if(atHome(p)){
-    let gain=salary(p);let extra='';
-    if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
-    p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
+    const cut=dumpCut(p),foe=foeOf(p);
+    let gain=salary(p)-cut;let extra=cut?`, Демпинг −${cut}`:'';
+    if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra+=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
+    if(cut){p.st.dumped+=cut;foe.st.dump+=cut}
+    p.money+=gain;p.st.wage+=salary(p)-cut;p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
     evCard={deltas:{[p.id]:gain}};
     if(p===meP())sfx.gain();
   } else {
@@ -1063,7 +1069,7 @@ function buyToken(p,k){
    своих ходов. Нужен только для сравнения покупок и оценки, скоро ли финиш. */
 function flowOf(q){
   const f=foeOf(q),inf=inflation(),fRaid=f.off.raid?0:f.lv.raid,myRaid=q.off.raid?0:q.lv.raid;
-  return .5*salary(q)+.3*val(q,'route')
+  return .5*salary(q)*(1-.5*Math.min(1,val(f,'dump')/100))+.3*val(q,'route')
     +.25*rentOf(q)*inf*(1-.24*fRaid)          // половина ренты хозяину минус чужой Рэкет, гость заходит в половине ходов
     -.5*payFor(q,f)+.5*rentOf(f)*inf*.12*myRaid;
 }
@@ -1126,10 +1132,14 @@ function botTokens(p){
    перков у каждого свой, поэтому заученного дебюта не остаётся.
    Запреты выбираются по очереди, но применяются оба разом — пока второй не решил,
    первый бан не виден ни в перках, ни в логе. Иначе второй банил бы, зная ответ. */
+/* Без цели по накоплениям партию заканчивает только банкротство, а разорить соперника можно
+   только рентой. Закрыть Аренду тогда нельзя: без неё у обоих партия шла бы бесконечно. */
+const banAllowed=k=>!(k==='rent'&&!table.goal);
 function botBan(p){
-  const r=rnd();
-  if(table.diff==='easy')return PK[r*PK.length|0];
-  if(table.diff==='normal')return r<.5?'rent':'office';
+  const r=rnd();   // ровно один вызов ГПСЧ при любых настройках — иначе клиенты разойдутся
+  const pool=PK.filter(banAllowed);
+  if(table.diff==='easy')return pool[r*pool.length|0];
+  if(table.diff==='normal')return r<.5?(banAllowed('rent')?'rent':'route'):'office';
   return r<.6?'route':'office';   // Акула закрывает то, чем её чаще всего обыгрывают
 }
 async function draftPhase(){
@@ -1147,7 +1157,7 @@ async function draftPhase(){
       tab='perks';
       const v=await evAsk(i,'Закройте сопернику один перк на всю партию. Ваш выбор он увидит, только когда решит сам.',
         PERKS.map(pk=>[pk.n,pk.k,false]),dflt);
-      if(PK.includes(v))k=v;
+      if(PK.includes(v)&&banAllowed(v))k=v;
     }
     if(over)return;
     bans[1-i]=k;   // банят сопернику, а не себе
@@ -1280,7 +1290,7 @@ function end(winner,reason){
     <div class="two"><button class="bmain" id="again">Ещё раз</button><button class="bline" id="setup">Настройки</button></div>
     <div class="rblock"><div class="rbh"><b class="sttl">Деньги</b>${legend}</div>
       ${[['заработано зарплатой','wage'],['получено ренты','got'],['отдано ренты','paid'],['бонус Логистики','route'],
-         ['снято Рэкетом','raid'],['отдано налогом лидера','tax']].map(([t,k])=>metric(t,k)).join('')}</div>
+         ['снято Рэкетом','raid'],['срезано Демпингом','dump'],['отдано налогом лидера','tax']].map(([t,k])=>metric(t,k)).join('')}</div>
     <div class="rblock tbl"><div class="rbh"><b class="sttl">Ходы</b>${legend}</div>
       ${[['ходов в гостях','away'],['куплено уровней','bought'],['продано уровней','sold'],['самая дорогая рента','peak'],
          ['потрачено жетонов','toks'],['выпало единиц','ones'],['выпало нулей','zeros']]
@@ -1334,12 +1344,12 @@ function showDraft(){
   openPage(`<div class="kick"><b><i></i><i></i></b>перед первым броском</div>
     <h1>Закройте сопернику один перк</h1>
     <p class="lead">На всю партию. Ваш выбор <span class="dname">${fn}</span> увидит, только когда решит сам.</p>
-    ${PERKS.map(pk=>`<button class="dcard${draftUI.pick===pk.k?' pick':''}" data-ban="${pk.k}" ${canPick?'':'disabled'} ${!canPick&&!draftUI.pick?'data-wait':''}>
-      <div><b>${pk.n}</b><span>${pk.d}</span>${pk.unlock(zero)?'':'<small>открывается после 3 уровней</small>'}</div>
-      <span class="dl">${LOCK}</span></button>`).join('')}
+    ${PERKS.map(pk=>{const ok=banAllowed(pk.k);return `<button class="dcard${draftUI.pick===pk.k?' pick':''}" data-ban="${pk.k}" ${canPick&&ok?'':'disabled'} ${(!canPick&&!draftUI.pick)||!ok?'data-wait':''}>
+      <div><b>${pk.n}</b><span>${pk.d}</span>${!ok?'<small>без цели по накоплениям закрыть нельзя</small>':pk.unlock(zero)?'':'<small>открывается после 3 уровней</small>'}</div>
+      <span class="dl">${LOCK}</span></button>`}).join('')}
     <div class="dfoot"><i></i><span class="ell">${foot}</span></div>`,'tight',!!document.querySelector('.dcard'));
   $('panel').querySelectorAll('[data-ban]').forEach(b=>b.onclick=()=>{
-    if(!canPick)return;
+    if(!canPick||!banAllowed(b.dataset.ban))return;
     const k=b.dataset.ban;draftUI.pick=k;showDraft();sfx.click();
     setTimeout(()=>{const a=acts.find(x=>x[0]===perk(k).n);if(a)a[1]()},vis(260));
   });
@@ -1366,7 +1376,7 @@ function resetTable(seats,seed,t){
   gen++;evReset();rndS=seed|0;gameSeed=seed|0;gaveUp=false;finished=false;
   tableCols=MP?null:[cfg.color,foeColor()[0]];applyColor();renderRules();
   P=seats.map((s,i)=>{const q=mk(s.name,i?'var(--foe)':'var(--you)',i,!!s.bot);q.id=i;return q});
-  const plans=[['rent','office','shield','raid','route'],['rent','shield','office','route','raid'],['rent','office','raid','shield','route']];
+  const plans=[['rent','office','dump','raid','route'],['rent','office','route','dump','raid'],['rent','office','raid','dump','route']];
   botPlan=plans[rnd()*plans.length|0];
   turn=0;over=false;busy=false;rounds=0;logs=[];coin='?';shown.length=0;idleCtx=null;note='';
   lastFlip=null;askText='';draftUI=null;
