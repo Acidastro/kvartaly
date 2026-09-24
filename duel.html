@@ -7,300 +7,405 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
+/* Токены из макета (README). Тёмная тема — по умолчанию; светлую задаёт Telegram
+   (data-theme) или система, если открыто в браузере. */
 :root{
-  --bg:#100E1A; --surf:#1B1830; --surf2:#232041; --line:#2E2A4D;
-  --text:#F3F0FF; --dim:#9C97BC;
-  --you:#7B61FF; --foe:#FF7A59; --good:#38D9A9; --bad:#FF5470;
-  --rad:20px;
+  --bg:#111319;--surf:#1A1D26;--surf2:#232733;--line:#363C4D;--text:#F3F0E8;--dim:#A5ABBB;
+  --ink:#07080C;--gold:#FFC53D;--goldEdge:#B8861A;--goldInk:#1A1405;--good:#3DDBA8;--bad:#FF6A83;
+  --dot:rgba(255,255,255,.05);
+  --you:#7B61FF;--foe:#B5E853;--youInk:#FFFFFF;--foeInk:#15131C;
+  --num:Unbounded,system-ui,sans-serif;
 }
 @media (prefers-color-scheme:light){
-  :root:not([data-theme="dark"]){--bg:#F3F1FA;--surf:#FFFFFF;--surf2:#F7F5FF;--line:#E2DEF3;--text:#1A1730;--dim:#6B6690;--you:#5B3DF5;--foe:#E24F26}
+  :root:not([data-theme="dark"]){--bg:#F1ECE3;--surf:#FFFFFF;--surf2:#F6F2EA;--line:#DDD5C7;--text:#1C1A16;--dim:#646054;
+    --ink:#D3CABB;--goldEdge:#C9901C;--good:#0B7F5F;--bad:#C62D4E;--dot:rgba(70,50,20,.08)}
 }
-/* в Telegram тему задаёт клиент, а не система: светлый Telegram на тёмной ОС должен быть светлым */
-:root[data-theme="light"]{--bg:#F3F1FA;--surf:#FFFFFF;--surf2:#F7F5FF;--line:#E2DEF3;--text:#1A1730;--dim:#6B6690;--you:#5B3DF5;--foe:#E24F26}
+:root[data-theme="light"]{--bg:#F1ECE3;--surf:#FFFFFF;--surf2:#F6F2EA;--line:#DDD5C7;--text:#1C1A16;--dim:#646054;
+  --ink:#D3CABB;--goldEdge:#C9901C;--good:#0B7F5F;--bad:#C62D4E;--dot:rgba(70,50,20,.08)}
 *{box-sizing:border-box}
 html,body{height:var(--app-h,100%)}
-body{margin:0;background:var(--bg);color:var(--text);font-family:Onest,system-ui,sans-serif;
-  font-size:15px;line-height:1.4;overflow:hidden;
-  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+body{margin:0;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.6px);
+  background-size:18px 18px;color:var(--text);font-family:Onest,system-ui,sans-serif;font-size:15px;line-height:1.4;
+  -webkit-font-smoothing:antialiased;overflow:hidden;padding:env(safe-area-inset-top,0) 0 0}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
 button:focus-visible{outline:2px solid var(--you);outline-offset:2px}
-.app{height:100%;max-width:520px;margin:0 auto;padding:10px 12px 12px;
-  display:grid;grid-template-rows:repeat(6,auto) minmax(0,1fr);gap:10px;overflow:auto}
+b{font-weight:700}
+/* имя игрока может быть длинным — везде обрезаем многоточием */
+.ell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* HUD */
-.hud{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.who{background:var(--surf);border-radius:16px;padding:10px 12px;display:flex;flex-direction:column;gap:1px;
-  border:1.5px solid transparent;transition:border-color .2s}
-.who.acting{border-color:var(--you)}
-#hud1.acting{border-color:var(--foe)}
-.who .name{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px}
-.who .name::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--you)}
-#hud1 .name::before{background:var(--foe)}
-.who{position:relative}
-.who .val{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
-.valrow{display:flex;align-items:center;gap:10px;min-height:32px}
-.dslot{position:relative;flex:1;height:30px}
-.delta{position:absolute;left:0;top:50%;font-size:20px;font-weight:800;pointer-events:none;white-space:nowrap;
-  padding:1px 10px;border-radius:999px;animation:floatup 1.7s cubic-bezier(.25,.9,.35,1) forwards}
-.delta.plus{background:color-mix(in srgb,#38D9A9 20%,transparent)}
-.delta.minus{background:color-mix(in srgb,var(--bad) 20%,transparent)}
-.delta.plus,.hit.plus{color:#38D9A9}
-.delta.minus,.hit.minus{color:var(--bad)}
-.hit{position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:30px;font-weight:800;
-  letter-spacing:-.02em;pointer-events:none;z-index:4;animation:hitup 1.8s cubic-bezier(.2,.9,.3,1) forwards;
-  padding:2px 12px;border-radius:999px;background:var(--surf);box-shadow:0 6px 20px rgba(0,0,0,.45)}
-.hit.plus{background:color-mix(in srgb,#38D9A9 22%,var(--surf));box-shadow:0 0 0 2px color-mix(in srgb,#38D9A9 45%,transparent),0 6px 20px rgba(0,0,0,.4)}
-.hit.minus{background:color-mix(in srgb,var(--bad) 22%,var(--surf));box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 45%,transparent),0 6px 20px rgba(0,0,0,.4)}
-.cell.flash-plus{animation:flashp .7s ease-out}
-.cell.flash-minus{animation:flashm .7s ease-out}
-@keyframes flashp{0%{background:color-mix(in srgb,#38D9A9 28%,var(--surf2))}100%{background:var(--surf2)}}
-@keyframes flashm{0%{background:color-mix(in srgb,var(--bad) 28%,var(--surf2))}100%{background:var(--surf2)}}
-@keyframes floatup{0%{opacity:0;transform:translate(-8px,-50%) scale(.7)}
-  14%{opacity:1;transform:translate(0,-50%) scale(1.25)}
-  28%{transform:translate(0,-50%) scale(1)}
-  70%{opacity:1;transform:translate(0,-50%)}
-  100%{opacity:0;transform:translate(6px,-90%)}}
-@keyframes hitup{0%{opacity:0;transform:translate(-50%,14px) scale(.6)}
-  12%{opacity:1;transform:translate(-50%,-4px) scale(1.35)}
-  24%{transform:translate(-50%,0) scale(1)}
-  60%{opacity:1;transform:translate(-50%,-16px) scale(1)}
-  100%{opacity:0;transform:translate(-50%,-52px) scale(.95)}}
-.who .sub{font-size:11.5px;color:var(--dim)}
-.who.away .sub{color:var(--text);opacity:.75}
-.who.tired .sub{color:#FFC53D;opacity:1}
-.capbar{display:block;height:4px;border-radius:999px;background:var(--surf2);margin-top:6px;overflow:hidden}
-.capbar i{display:block;height:100%;background:var(--you);transition:width .3s}
-#hud1 .capbar i{background:var(--foe)}
-.capv{font-size:10.5px;color:var(--dim);margin-top:2px}
+/* Экран прокручивается целиком (макет 04 — «тот же экран, прокрученный вниз»): ряды сверху
+   не сжимаются, а лист внизу растёт вместе с содержимым. */
+.app{height:100%;overflow-y:auto;overscroll-behavior:contain}
+.col{max-width:520px;min-height:100%;margin:0 auto;display:flex;flex-direction:column;gap:12px;padding:8px 16px 0}
+.col>*{flex:none}
 
-.status{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim);flex-wrap:wrap}
-.pill{background:var(--surf);border-radius:999px;padding:5px 11px;font-size:12px}
-.pill.hot{background:color-mix(in srgb,var(--bad) 18%,var(--surf));color:var(--bad)}
-.pill b{font-weight:700;color:var(--text)}
-.pill.hot b{color:var(--bad)}
-.pill.menu{margin-left:auto;color:var(--text);border:1px solid var(--line)}
-button.pill{cursor:pointer;border:1px solid var(--line)}
-.note{margin:0;font-size:12.5px;color:var(--dim);background:var(--surf);border-radius:12px;padding:10px 12px;line-height:1.4}
+/* верхняя строка */
+.top{display:flex;align-items:center;gap:6px;height:44px}
+.tb{display:flex;align-items:center;gap:5px;height:44px;padding:0 12px;border-radius:12px;background:var(--surf);
+  font-size:12.5px;color:var(--dim)}
+.tb b{font-family:var(--num);font-size:13px;color:var(--text)}
+.infl{flex-grow:1;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;line-height:1.15}
+.infl .l1{font-weight:600;color:var(--text)}
+.infl .l2{font-size:11px;color:var(--dim)}
+.infl.hot{background:color-mix(in srgb,var(--bad) 14%,var(--surf))}
+.infl.hot .l1,.infl.hot .l1 b{color:var(--bad)}
+.spd{justify-content:center;min-width:44px;padding:0 10px;font-family:var(--num);font-size:13px;font-weight:700}
+.ico{justify-content:center;width:44px;padding:0;color:var(--text)}
+.note{margin:0;padding:12px 14px;border-radius:16px;background:var(--surf);border:2px solid var(--line);
+  font-size:13px;color:var(--dim);line-height:1.45}
 .note[hidden]{display:none}
 
-/* сцена */
-.stage{background:var(--surf);border-radius:var(--rad);padding:14px 12px;display:flex;
-  align-items:center;justify-content:center;gap:12px}
-.cellwrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.cellttl{font-size:12px;color:var(--dim);text-align:center}
-.cell{position:relative;background:var(--surf2);border-radius:16px;height:92px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:6px;padding:10px;border:1.5px dashed var(--line)}
-.cell.mine{border-style:solid;border-color:color-mix(in srgb,var(--you) 45%,transparent)}
-.cell.foes{border-style:solid;border-color:color-mix(in srgb,var(--foe) 45%,transparent)}
-.rentlab{font-size:11.5px;color:var(--dim);text-align:center}
-.rentlab b{display:block;font-size:17px;font-weight:700;color:var(--text)}
-.rentlab b u{text-decoration:none;font-size:11px;font-weight:600;color:var(--bad);margin-left:4px}
-/* пометка вне потока: иначе доска прыгает каждый раз, когда соперник щёлкает Арендой */
-.rentlab b{position:relative}
-.rentlab b i{position:absolute;left:50%;top:100%;transform:translateX(-50%);white-space:nowrap;
-  font-style:normal;font-size:11px;line-height:1.2;font-weight:600;color:var(--good)}
-.rentlab.bump b{animation:bump 1.1s cubic-bezier(.25,1.2,.4,1)}
+/* карточки игроков */
+.hud{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.who{min-width:0;display:flex;flex-direction:column;gap:3px;padding:11px 13px 12px;background:var(--surf);
+  border:2px solid transparent;border-radius:18px;box-shadow:0 4px 0 var(--ink);transition:border-color .2s}
+.who.a{--c:var(--you);--ci:var(--youInk)}.who.b{--c:var(--foe);--ci:var(--foeInk)}
+.who.acting{border-color:var(--c)}
+.whead{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);min-height:22px}
+.sq{flex:none;width:10px;height:10px;border-radius:3px;background:var(--c)}
+.turn{flex:none;margin-left:auto;padding:2px 8px;border-radius:6px;background:var(--c);color:var(--ci);font-size:11px;font-weight:700}
+.who:not(.acting) .turn{display:none}
+.vrow{display:flex;align-items:center;gap:8px;min-height:36px;min-width:0}
+.val{font-family:var(--num);font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.dbadge{flex:none;padding:2px 9px;border-radius:8px;font-family:var(--num);font-size:15px;font-weight:700}
+.dbadge[hidden]{display:none}
+.pos{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.neg{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.who .sub{font-size:12px;color:var(--dim)}
+.who.tired .sub{color:var(--gold)}
+.bar{height:6px;margin-top:5px;border-radius:999px;background:var(--surf2);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:999px;background:var(--c);transition:width .3s}
+.capv{font-size:11px;color:var(--dim)}
+
+/* поле */
+.board{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:20px;background:var(--surf)}
+.cells{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cell{position:relative;min-width:0;height:150px;display:flex;flex-direction:column;align-items:center;
+  justify-content:space-between;padding:10px 10px 9px;border:3px solid var(--c);border-radius:14px;
+  background:color-mix(in srgb,var(--c) 13%,var(--surf2))}
+.cell.a{--c:var(--you)}.cell.b{--c:var(--foe)}
+.cttl{align-self:stretch;font-size:11.5px;font-weight:600;color:var(--dim)}
+.pawns{display:flex;flex-direction:column;align-items:center;gap:8px;max-width:100%}
+.pawn{display:block;min-width:58px;max-width:100%;height:32px;line-height:32px;text-align:center;padding:0 12px;
+  border-radius:10px;font-weight:700;font-size:14px;box-shadow:0 3px 0 var(--ink)}
+.pawn.a{background:var(--you);color:var(--youInk)}.pawn.b{background:var(--foe);color:var(--foeInk)}
+.pawn.guest{outline:2px dashed var(--text);outline-offset:3px}
+.rent{display:flex;align-items:baseline;gap:5px;font-size:11.5px;color:var(--dim);white-space:nowrap}
+.rent b{font-family:var(--num);font-size:17px;color:var(--text)}
+.rent u{text-decoration:none;font-size:11px;font-weight:700;color:var(--bad)}
+.rent.off{font-weight:600;color:var(--good)}
+.rent.bump b{display:inline-block;animation:bump 1.1s cubic-bezier(.25,1.2,.4,1)}
 @keyframes bump{0%{transform:scale(1)}18%{transform:scale(1.45);color:var(--bad)}45%{transform:scale(1);color:var(--bad)}100%{transform:scale(1)}}
-.pawn{font-size:12.5px;font-weight:600;border-radius:999px;color:#fff;
-  width:64px;height:28px;display:grid;place-items:center}
-.pawn.a{background:var(--you)}.pawn.b{background:var(--foe)}
-.pawn.guest{outline:2px dashed color-mix(in srgb,var(--text) 55%,transparent);outline-offset:2px}
-@keyframes pop{from{transform:scale(.6);opacity:0}}
-.coinwrap{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
-.coin{width:64px;height:64px;border-radius:50%;background:var(--surf2);display:grid;place-items:center;
-  font-size:28px;font-weight:800;border:2px solid var(--line);transition:transform .25s}
+.hit{position:absolute;left:50%;top:38%;transform:translateX(-50%);font-family:var(--num);font-size:18px;font-weight:800;
+  pointer-events:none;z-index:4;animation:hitup 1.8s cubic-bezier(.2,.9,.3,1) forwards;padding:2px 10px;border-radius:10px;
+  background:var(--surf);white-space:nowrap}
+.hit.minus{color:var(--bad);box-shadow:0 0 0 2px color-mix(in srgb,var(--bad) 45%,transparent)}
+@keyframes hitup{0%{opacity:0;transform:translate(-50%,14px) scale(.6)}12%{opacity:1;transform:translate(-50%,-4px) scale(1.2)}
+  24%{transform:translate(-50%,0) scale(1)}70%{opacity:1}100%{opacity:0;transform:translate(-50%,-40px)}}
+.coinrow{display:grid;grid-template-columns:minmax(0,1fr) 60px minmax(0,1fr);gap:14px;align-items:center}
+.chip{padding:4px 10px;border-radius:8px;background:var(--surf2);font-size:12.5px;color:var(--dim);white-space:nowrap;
+  transition:background .2s,color .2s}
+.chip b{font-family:var(--num);color:var(--text)}
+.chip.l{justify-self:end}.chip.r{justify-self:start}
+/* чип исхода заливается цветом того, кто бросал; второй остаётся серым */
+.chip.hit-a{background:var(--you);color:var(--youInk);font-weight:700}
+.chip.hit-b{background:var(--foe);color:var(--foeInk);font-weight:700}
+.chip.hit-a b,.chip.hit-b b{color:inherit}
+.coin{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:var(--gold);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 4px 0 var(--goldEdge);
+  font-family:var(--num);font-size:24px;font-weight:800;color:#2B1F00}
 .coin.flip{animation:spin .4s linear infinite}
 @keyframes spin{to{transform:rotateY(360deg)}}
-.coinlab{font-size:11px;color:var(--dim);transition:color .2s}
-.coinlab.live{font-weight:600}
-.coinlab.live.go{color:var(--you)}
-.coinlab.live.stay{color:var(--dim)}
 
-/* сообщение и кнопка */
-.toks{display:flex;gap:6px}
-.tk{flex:1;background:var(--surf);border-radius:14px;padding:8px 6px;display:flex;flex-direction:column;
-  align-items:center;gap:1px;font-size:11px;color:var(--dim);border:1.5px solid transparent;line-height:1.2}
-.tk b{font-size:13px;font-weight:600;color:var(--text)}
-.tk i{font-style:normal;font-size:11px}
+/* карточка события после броска */
+.event{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:16px;background:var(--surf);border:2px solid var(--line)}
+.event[hidden]{display:none}
+.event.good{border-color:color-mix(in srgb,var(--good) 50%,transparent)}
+.event.bad{border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
+.event .pre{font-size:12px;color:var(--dim)}
+.event .ttl{font-size:14px;font-weight:600}
+.event .chips{display:flex;flex-wrap:wrap;gap:8px;font-size:13px}
+.echip{max-width:100%;padding:3px 9px;border-radius:8px;font-weight:700}
+.echip.zero{background:var(--surf2);color:var(--dim);font-weight:600}
+
+/* жетоны под полем */
+.toks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tk{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-height:58px;padding:9px 11px;border-radius:14px;
+  background:var(--surf);border:2px solid var(--line);text-align:left;min-width:0}
+.tk .tn{display:flex;align-items:center;gap:4px;width:100%;font-size:13.5px;font-weight:600;white-space:nowrap;letter-spacing:-.01em}
+.tk .cnt{margin-left:auto;display:grid;place-items:center;min-width:22px;height:22px;border-radius:6px;background:var(--surf2);
+  font-family:var(--num);font-size:11.5px;flex:none}
+.tk .th{font-size:11.5px;color:var(--dim)}
 .tk.can{border-color:var(--you)}
-.tk.can i{color:var(--you);font-weight:600}
-.tk:disabled{opacity:.45;cursor:default}
-.msg{margin:0;font-size:13.5px;color:var(--dim);text-align:center;min-height:2.4em;display:grid;place-items:center;padding:0 4px}
-.acts{display:flex;gap:8px}
-.btn{flex:1;background:var(--you);color:#fff;border-radius:16px;padding:14px;font-weight:600;font-size:16px;
-  transition:transform .12s}
-.btn:active{transform:scale(.98)}
-.btn.ghost{background:var(--surf);color:var(--text)}
-.btn:disabled{opacity:.4;cursor:default}
+.tk.can .th{display:flex;align-items:center;gap:5px;font-weight:700;color:var(--text)}
+.tk.can .th::before{content:'';width:7px;height:7px;border-radius:2px;background:var(--you)}
+.tk.none{opacity:.5}
+.tk:disabled{cursor:default}
+
+/* главная кнопка / статус хода / ответы на вопрос — одна высота, чтобы раскладка не прыгала */
+.action{display:flex;flex-direction:column;gap:8px}
+.action .row{display:flex;gap:8px}
+.main{display:flex;align-items:center;justify-content:center;height:56px;border-radius:16px;background:var(--gold);color:var(--goldInk);
+  font-size:17px;font-weight:700;text-align:center;box-shadow:0 8px 24px -10px rgba(255,197,61,.55);width:100%}
+.main:disabled{opacity:.55;cursor:default}
+.main.alt{background:var(--surf);color:var(--text);border:2px solid var(--line);box-shadow:none;font-size:15px}
+.row .main{flex:1;min-width:0}
+.statusline{display:flex;align-items:center;justify-content:center;gap:10px;height:56px;padding:0 16px;border-radius:16px;
+  background:color-mix(in srgb,var(--c) 12%,var(--surf));font-size:15px;font-weight:600}
+.statusline.a{--c:var(--you)}.statusline.b{--c:var(--foe)}
+.statusline .sq{width:12px;height:12px}
 
 /* нижний лист */
-.sheet{background:var(--surf);border-radius:var(--rad);display:flex;flex-direction:column;min-height:120px}
-.tabs{display:flex;gap:4px;padding:8px 8px 0}
-.tab{flex:1;padding:8px;border-radius:12px;font-size:13px;color:var(--dim);font-weight:500}
-.tab[aria-selected="true"]{background:var(--surf2);color:var(--text)}
-.pane{overflow:auto;padding:8px 10px 12px;min-height:0}
+.sheet{flex:1 0 auto;display:flex;flex-direction:column;gap:10px;margin:0 -16px;padding:10px 12px 20px;
+  border-radius:24px 24px 0 0;background:var(--surf);box-shadow:0 -1px 0 var(--line)}
+.grip{align-self:center;width:40px;height:4px;border-radius:999px;background:var(--line)}
+.tabs{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--surf2)}
+.tab{flex-grow:1;height:38px;border-radius:10px;font-size:13.5px;font-weight:500;color:var(--dim);text-align:center}
+.tab[aria-selected="true"]{background:var(--surf);font-weight:600;color:var(--text)}
 .pane[hidden]{display:none}
+.list{display:flex;flex-direction:column;gap:10px}
 
-.perks{display:flex;flex-direction:column;gap:6px}
-.card{display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto auto;gap:1px 10px;
-  background:var(--surf2);border-radius:14px;padding:10px 12px;text-align:left;
-  border:1.5px solid transparent;transition:border-color .15s,transform .12s}
-.card.ready{border-color:color-mix(in srgb,var(--you) 40%,transparent)}
-.card.ready:active{transform:scale(.99)}
-.card.shut{opacity:.5}
-/* перк, закрытый драфтом, не должен сливаться с «ещё не открытыми»: те откроются, этот нет */
-.card.banned{opacity:1;border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--surf2))}
-.card.banned .nm{color:var(--bad);text-decoration:line-through;text-decoration-thickness:2px}
-.card.banned .buy{color:var(--bad)}
-.foeperks li.banned b{color:var(--bad);text-decoration:line-through}
-.foeperks li.banned i{color:var(--bad)}
-.foeperks li.paused b{opacity:.55}
-.foeperks li.paused i{color:var(--good);font-weight:600}
-.shop{margin-top:10px;display:flex;flex-direction:column;gap:6px}
-.shop>span{font-size:11.5px;color:var(--dim)}
-.card .ring{grid-row:1/4;align-self:center}
-.card .nm{font-weight:600;font-size:14.5px}
-.card .ef{font-size:12px;color:var(--dim);grid-column:2}
-.card .nm{grid-column:2}
-.card .buy{grid-column:2;font-size:12px;color:var(--you);font-weight:600;margin-top:1px}
-.card .tag{grid-column:3;grid-row:1/4;align-self:center;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;min-width:58px;padding:7px 10px;border-radius:12px;background:var(--surf);line-height:1.15}
-.card.ready .tag{background:color-mix(in srgb,var(--you) 22%,var(--surf))}
-.card .tag i{font-style:normal;font-size:10px;color:var(--dim)}
-.card .tag b{font-size:16px;font-weight:700}
-.card .tag u{font-size:9.5px;text-decoration:none;color:var(--dim)}
-.card .q{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;margin-left:6px;
-  background:var(--surf);color:var(--dim);font-size:11px;font-weight:700;vertical-align:1px;cursor:help}
-.card .q:hover{color:var(--text)}
-.card[aria-disabled="true"]{cursor:default}
-.card[aria-disabled="true"] .tag b{color:var(--dim)}
-.card .side{grid-column:3;grid-row:1/4;align-self:center;display:flex;flex-direction:column;align-items:stretch;gap:6px}
-.card .side .tag{grid-column:auto;grid-row:auto}
-.card .tog{text-align:center;white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--dim);
-  padding:3px 10px;border-radius:999px;border:1.5px solid var(--line);cursor:pointer}
-.card .tog:hover{color:var(--text);border-color:var(--dim)}
-.card .tog.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 55%,transparent);background:color-mix(in srgb,var(--good) 10%,transparent)}
-.card .tog.off{opacity:.4;cursor:default}
-.card.paused{border-style:dashed;border-color:var(--line)}
-.card.paused .nm,.card.paused .ring{opacity:.55}
-.card .howto{grid-column:1/4;font-size:12px;color:var(--dim);margin-top:6px;padding-top:6px;
-  border-top:1px solid var(--surf);line-height:1.4}
-.card.ready .tag b{color:var(--you)}
-.card:disabled .buy{color:var(--dim);font-weight:400}
-.ring{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;
-  background:conic-gradient(var(--c) var(--p),var(--line) 0)}
+/* перки */
+.pk{display:flex;flex-direction:column;padding:10px 12px;border-radius:16px;background:var(--surf2);border:2px solid var(--line)}
+.pk.ready{border-color:color-mix(in srgb,var(--you) 45%,transparent)}
+.pk.paused{border-style:dashed}
+.pk.paused .ring,.pk.paused .pname{opacity:.55}
+.pkrow{display:flex;align-items:center;gap:12px}
+.ring{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:conic-gradient(var(--c) var(--p),var(--line) 0)}
 .ring.a{--c:var(--you)}.ring.b{--c:var(--foe)}
-.ring b{width:30px;height:30px;border-radius:50%;background:var(--surf);display:grid;place-items:center;
-  font-size:14px;font-weight:700}
-.foeperks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.foeperks li{display:flex;align-items:center;gap:10px}
-.foeperks span{display:flex;flex-direction:column}
-.foeperks b{font-size:14px;font-weight:600}
-.foeperks i{font-size:12px;color:var(--dim);font-style:normal}
-.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--dim)}
+.ring b{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--surf2);font-family:var(--num);font-size:14px}
+.pkbody{flex-grow:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pname{display:flex;align-items:center;gap:6px;font-weight:600;font-size:15px}
+.q{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--surf);color:var(--dim);font-size:11px;font-weight:700;flex:none}
+.pk .now{font-size:12px;color:var(--dim)}
+.pk .next{font-size:12px;font-weight:600}
+.pk .why{font-size:12px;color:var(--dim)}
+.tog{align-self:flex-start;margin-top:4px;padding:4px 10px;border-radius:8px;border:1.5px solid var(--line);font-size:11.5px;font-weight:600;color:var(--dim)}
+.tog.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 55%,transparent);background:color-mix(in srgb,var(--good) 10%,transparent)}
+.tog:disabled{opacity:.45;cursor:default}
+.up{flex:none;display:flex;flex-direction:column;align-items:center;min-width:66px;padding:7px 10px;border-radius:12px;
+  background:var(--you);color:var(--youInk);box-shadow:0 3px 0 var(--ink)}
+.up span{font-size:10.5px;font-weight:600}
+.up b{font-family:var(--num);font-size:16px}
+.up:disabled{background:var(--surf);color:var(--dim);box-shadow:none;cursor:default}
+.howto{margin-top:6px;padding-top:7px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);line-height:1.45}
+.pk.banned{flex-direction:row;align-items:center;gap:12px;background:color-mix(in srgb,var(--bad) 10%,var(--surf2));border-color:var(--bad)}
+.lock{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:color-mix(in srgb,var(--bad) 20%,transparent);color:var(--bad)}
+.pk.banned .pname{color:var(--bad);text-decoration:line-through;text-decoration-thickness:2px}
+.pk.banned .why{color:var(--bad)}
+.shophead{display:flex;align-items:baseline;gap:8px;padding:10px 4px 0}
+.shophead b{font-family:var(--num);font-size:15px}
+.shophead span{font-size:12px;color:var(--dim)}
+.tkshop{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:16px;background:var(--surf2)}
+.tkshop .num{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--surf);
+  font-family:var(--num);font-size:15px;font-weight:700}
+.tkshop .d{font-size:12px;color:var(--dim)}
+.buy{flex:none;display:flex;flex-direction:column;align-items:center;min-width:66px;padding:7px 10px;border-radius:12px;
+  background:var(--surf);border:2px solid var(--line)}
+.buy span{font-size:10.5px;font-weight:600;color:var(--dim)}
+.buy b{font-family:var(--num);font-size:16px}
+.buy:disabled{opacity:.45;cursor:default}
+
+/* вкладки «Соперник», «Лог», «Правила» */
+.frow{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:16px;background:var(--surf2)}
+.frow .now{font-size:12px;color:var(--dim)}
+.frow.banned{background:color-mix(in srgb,var(--bad) 10%,var(--surf2))}
+.frow.banned .pname{color:var(--bad);text-decoration:line-through}
+.frow.banned .now{color:var(--bad)}
+.frow.paused .now{color:var(--good);font-weight:600}
+.log{list-style:none;margin:0;padding:0 4px;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--dim)}
 .log .fresh{color:var(--text)}
-/* цвет фишки, подмешанный к цвету текста: в тёмной теме почти чистый, в светлой темнеет —
-   иначе жёлтое и лаймовое имя на белом фоне не читается */
 .log .pn{font-weight:700;--pnmix:82%}
 :root[data-theme="light"] .log .pn{--pnmix:55%}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .log .pn{--pnmix:55%}}
 .log .pn.a{color:color-mix(in srgb,var(--you) var(--pnmix),var(--text))}
 .log .pn.b{color:color-mix(in srgb,var(--foe) var(--pnmix),var(--text))}
-.rules{font-size:13px;color:var(--dim);line-height:1.45}
-.rules h3{font-size:13px;font-weight:700;color:var(--text);margin:14px 0 4px}
-.rules h3:first-child{margin-top:2px}
+.rules{padding:0 4px;font-size:13px;color:var(--dim);line-height:1.5}
+.rules h3{font-family:var(--num);font-size:14px;font-weight:700;color:var(--text);margin:16px 0 4px}
+.rules h3:first-child{margin-top:4px}
 .rules p{margin:0 0 4px}
 .rules ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
 .rules li::marker{color:var(--you)}
 .rules b{color:var(--text);font-weight:600}
 .rules .mut{margin-top:5px;font-size:12px}
 
-.overlay{position:fixed;inset:0;background:rgba(10,8,20,.7);display:grid;place-items:center;padding:20px;z-index:9}
+/* полноэкранные страницы поверх игры: старт, меню, драфт, итог, лобби, статистика */
+.overlay{position:fixed;inset:0;z-index:9;overflow-y:auto;overscroll-behavior:contain;background-color:var(--bg);
+  background-image:radial-gradient(var(--dot) 1.2px,transparent 1.6px);background-size:18px 18px;
+  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 .overlay[hidden]{display:none}
-.panelbox{background:var(--surf);border-radius:24px;padding:24px;width:min(400px,100%);
-  display:flex;flex-direction:column;gap:12px;text-align:center}
-.panelbox h2{font-size:26px;font-weight:800;margin:0}
-.setup{display:flex;flex-direction:column;gap:14px;text-align:left}
-.field>span{font-size:12.5px;color:var(--dim);display:block;margin-bottom:6px}
-.swatches{display:flex;gap:8px;flex-wrap:wrap}
-.sw{width:38px;height:38px;border-radius:50%;border:2.5px solid transparent;transition:transform .12s}
-.sw.on{border-color:var(--text);transform:scale(1.06)}
+.page{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:20px;padding:28px 16px 24px}
+.page.tight{gap:12px;padding-top:24px}
+.page.result{gap:14px;padding-top:24px}
+.logo{display:flex;gap:8px}
+.logo i{width:44px;height:44px;border-radius:10px;background:var(--you);box-shadow:0 4px 0 var(--ink)}
+.logo i+i{background:var(--foe);transform:rotate(8deg)}
+.page h1{margin:0;font-family:var(--num);font-size:36px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
+.lead{margin:0;font-size:15px;color:var(--dim);text-wrap:pretty}
+.stack{display:flex;flex-direction:column;gap:10px}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bgold{display:flex;align-items:center;justify-content:center;height:58px;border-radius:16px;background:var(--gold);color:#2B1F00;
+  font-family:var(--num);font-size:16px;font-weight:700;box-shadow:0 5px 0 var(--goldEdge);text-align:center;width:100%}
+.bmain{height:56px;border-radius:16px;background:var(--gold);color:var(--goldInk);font-size:17px;font-weight:700;text-align:center;
+  box-shadow:0 8px 24px -10px rgba(255,197,61,.55);width:100%}
+.bmain:disabled,.bline:disabled{opacity:.5;cursor:default}
+.bline{height:50px;border-radius:14px;background:var(--surf);border:2px solid var(--line);font-size:14.5px;font-weight:600;text-align:center;width:100%}
+.sect .bline{background:var(--surf2)}
+.sect{display:flex;flex-direction:column;gap:18px;padding:16px 14px 18px;border-radius:20px;background:var(--surf)}
+.shead{display:flex;flex-direction:column;gap:2px}
+.shead b,.sttl{font-family:var(--num);font-size:15px;font-weight:700}
+.shead span{font-size:12.5px;color:var(--dim)}
+.fld{display:flex;flex-direction:column;gap:8px}
+.fld>span{font-size:12.5px;color:var(--dim)}
+.sws{display:flex;gap:10px;flex-wrap:wrap}
+.sw{width:44px;height:44px;border-radius:12px}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 3px var(--surf),0 0 0 5.5px var(--text)}
 /* занятый цвет остаётся узнаваемым, но зачёркнут: полупрозрачный жёлтый на тёмном выглядел бы бурым, «новым» цветом */
-.sw:disabled{opacity:.45;cursor:not-allowed;background-image:linear-gradient(45deg,transparent 44%,var(--bg) 44% 56%,transparent 56%)}
-.opts{display:flex;gap:6px}
-.opt{flex:1;background:var(--surf2);border-radius:14px;padding:9px 6px;font-size:11px;color:var(--dim);
-  display:flex;flex-direction:column;gap:2px;line-height:1.25;border:1.5px solid transparent}
-.opt b{font-size:14px;font-weight:700;color:var(--text)}
-.opt.on{border-color:var(--you)}
-.panelbox p{margin:0;color:var(--dim);font-size:14px}
-.stats{display:flex;flex-direction:column;gap:2px;text-align:left}
-.srow{display:grid;grid-template-columns:1fr 62px 62px;gap:6px;align-items:center;
-  font-size:13px;color:var(--dim);padding:5px 2px;border-bottom:1px solid var(--surf2)}
-.srow b{text-align:right;color:var(--text);font-weight:600}
-.srow.head{color:var(--dim);border-bottom-color:var(--line)}
-.stats.two .srow{grid-template-columns:1fr auto}
-.stats.two .srow b{white-space:nowrap}
-.stats.two .srow b i{font-style:normal;color:var(--dim);font-weight:500;margin-left:6px}
-.srow.head b{color:var(--dim);font-weight:500}
-@media (max-height:700px){.cell{height:74px}.coin{width:54px;height:54px;font-size:24px}.who .val{font-size:22px}.stage{padding:10px}}
-@media (prefers-reduced-motion:reduce){.coin.flip{animation:none}.pawn{animation:none}.delta{animation:fadeonly 1.7s linear forwards}}
-@keyframes fadeonly{0%,80%{opacity:1;transform:translateY(-50%)}100%{opacity:0;transform:translateY(-50%)}}
+.sw:disabled{opacity:.45;cursor:not-allowed;background-image:linear-gradient(45deg,transparent 44%,var(--surf) 44% 56%,transparent 56%)}
+.grid{display:grid;gap:6px}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.opt{display:flex;flex-direction:column;gap:2px;min-height:56px;padding:9px 10px;border-radius:14px;background:var(--surf2);
+  border:2px solid transparent;text-align:left;font-size:11.5px;color:var(--dim);line-height:1.25;min-width:0}
+.opt b{font-family:var(--num);font-size:13px;color:var(--text)}
+.opt[aria-pressed="true"]{border-color:var(--you)}
+.opt.c{min-height:48px;justify-content:center;align-items:center;text-align:center}
+.swt{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 12px 0 14px;border-radius:14px;
+  background:var(--surf2);font-size:14px;font-weight:600}
+.swt i{display:flex;width:40px;height:24px;padding:3px;border-radius:999px;background:var(--line);transition:background .15s}
+.swt i::after{content:'';width:18px;height:18px;border-radius:50%;background:#FFFFFF;transition:margin .15s}
+.swt[aria-checked="true"] i{background:var(--you)}
+.swt[aria-checked="true"] i::after{margin-left:auto}
+.mhead{display:flex;align-items:center;gap:12px}
+.mhead>div{flex-grow:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mhead h1{font-size:28px;line-height:1.1}
+.mhead span{font-size:13px;color:var(--dim)}
+.xbtn{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--surf)}
+.inp{width:100%;height:48px;padding:0 14px;border-radius:14px;background:var(--surf2);border:2px solid var(--line);color:inherit;font:inherit}
+.inp:focus{outline:none;border-color:var(--you)}
+.who2{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--surf2);font-size:14px}
+.who2 .sq{width:12px;height:12px}
+.who2 .ell{flex-grow:1}
+.who2 small{flex:none;font-size:12px;color:var(--dim)}
+
+/* драфт */
+.kick{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;color:var(--dim)}
+.kick i{width:18px;height:18px;border-radius:5px;background:var(--you)}
+.kick i+i{background:var(--foe)}
+.kick b{display:flex;gap:5px;font-weight:inherit}
+.page.tight h1{font-size:32px;letter-spacing:-.02em;line-height:1.1}
+.page.tight .lead{margin-bottom:6px;font-size:14px}
+.dname{display:inline-block;max-width:12em;vertical-align:bottom;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcard{display:flex;align-items:center;gap:14px;min-height:72px;padding:12px 14px;border-radius:16px;background:var(--surf);
+  border:2px solid var(--line);box-shadow:0 4px 0 var(--ink);text-align:left;width:100%}
+.dcard>div{flex-grow:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.dcard b{font-family:var(--num);font-size:16px}
+.dcard span{font-size:12.5px;color:var(--dim);line-height:1.35}
+.dcard small{font-size:11.5px;color:var(--dim)}
+.dcard .dl{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--surf2);color:var(--dim)}
+.dcard.pick{background:color-mix(in srgb,var(--bad) 10%,var(--surf));border-color:var(--bad)}
+.dcard.pick .dl{color:var(--bad)}
+.dcard:disabled{cursor:default}
+.dcard[data-wait]{opacity:.6}
+.dfoot{flex-grow:1;display:flex;align-items:flex-end;justify-content:center;gap:8px;min-height:40px;font-size:12.5px;color:var(--dim);text-align:center}
+.dfoot i{flex:none;width:8px;height:8px;border-radius:2px;background:var(--foe);margin-bottom:5px}
+
+/* итог */
+.rhero{display:flex;flex-direction:column;gap:16px;padding:20px 18px;border-radius:24px;background:var(--surf)}
+.rhero .meta{font-size:12.5px;font-weight:600;color:var(--dim)}
+.rhero h1{font-size:44px;letter-spacing:-.04em;line-height:1}
+.rhero p{margin:0;font-size:15px;color:var(--dim)}
+.rcards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rcard{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px 14px 14px;border:3px solid var(--c);border-radius:14px;
+  background:color-mix(in srgb,var(--c) 16%,var(--surf2))}
+.rcard.a{--c:var(--you);--ci:var(--youInk)}.rcard.b{--c:var(--foe);--ci:var(--foeInk)}
+.rcard .nm{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;font-weight:600;color:var(--dim)}
+.rcard .nm .sq{background:var(--c)}
+.rcard>b,.brow b,.trow b{white-space:nowrap}
+.page.result .bline{height:56px;font-size:15px}
+.rcard>b{font-family:var(--num);font-size:32px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.rtag{align-self:flex-start;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:var(--c);color:var(--ci)}
+.rtag.lost{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--dim)}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend .ell{max-width:96px}
+.legend .sq.a{background:var(--you)}.legend .sq.b{background:var(--foe)}
+.rblock{display:flex;flex-direction:column;gap:14px;padding:16px 16px 18px;border-radius:20px;background:var(--surf)}
+.rblock.tbl{gap:0;padding-bottom:10px}
+.rbh{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.rblock.tbl .rbh{padding-bottom:10px}
+.metric{display:flex;flex-direction:column;gap:5px}
+.metric>span{font-size:12.5px;color:var(--dim)}
+.brow{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:8px;align-items:center}
+.brow>i{height:8px;border-radius:999px;background:var(--surf2);overflow:hidden}
+.brow>i>i{display:block;height:100%;border-radius:999px}
+.brow.a>i>i{background:var(--you)}.brow.b>i>i{background:var(--foe)}
+.brow b{text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.brow b.lo{font-weight:500;color:var(--dim)}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) 52px 52px;gap:6px;padding:7px 0;border-top:1px solid var(--surf2);font-size:13px;color:var(--dim)}
+.trow b{text-align:right;color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* строки статистики игрока */
+.stats{display:flex;flex-direction:column;gap:0}
+.srow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;font-size:13px;color:var(--dim);padding:8px 0;border-top:1px solid var(--surf2)}
+.srow:first-child{border-top:0}
+.srow b{text-align:right;color:var(--text);font-weight:600;white-space:nowrap}
+.srow b i{font-style:normal;color:var(--dim);font-weight:500;margin-left:6px}
+.srow small{color:var(--dim)}
+.note2{margin:0;font-size:12.5px;color:var(--dim);text-align:center}
+@media (prefers-reduced-motion:reduce){.coin.flip{animation:none}.hit{animation:none;opacity:0}}
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="hud">
-    <div class="who" id="hud0"><span class="name" id="nm0">Вы</span><span class="valrow"><span class="val" id="money0">0</span><span class="dslot" id="dslot0"></span></span><span class="sub" id="sub0"></span><span class="capbar"><i id="cap0"></i></span><span class="capv" id="capv0"></span></div>
-    <div class="who" id="hud1"><span class="name" id="nm1">Соперник</span><span class="valrow"><span class="val" id="money1">0</span><span class="dslot" id="dslot1"></span></span><span class="sub" id="sub1"></span><span class="capbar"><i id="cap1"></i></span><span class="capv" id="capv1"></span></div>
+<div class="app"><div class="col">
+  <div class="top">
+    <span class="tb">круг <b id="round">1</b></span>
+    <button class="tb infl" id="infl"><span class="l1">рента <b id="inflNow">+0%</b></span><span class="l2" id="inflnext"></span></button>
+    <button class="tb spd" id="speedBtn">×1</button>
+    <button class="tb ico" id="menuBtn" aria-label="Меню"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   </div>
-
-  <div class="status">
-    <span class="pill">круг <b id="round">1</b></span>
-    <button class="pill" id="infl" title="Что такое инфляция">+0%</button>
-    <span>рост ренты через <b id="inflnext">8</b></span>
-    <button class="pill" id="speedBtn" title="Темп анимации: на правила не влияет">темп</button>
-    <button class="pill" id="sndBtn" title="Звук" aria-label="Звук">🔊</button>
-    <button class="pill" id="hapBtn" title="Вибрация" aria-label="Вибрация" hidden>📳</button>
-    <button class="pill menu" id="menuBtn">Меню</button>
-  </div>
-
   <p class="note" id="inflNote" hidden></p>
 
-  <div class="stage">
-    <div class="cellwrap">
-      <span class="cellttl" id="ttlA">ваша клетка</span>
-      <div class="cell mine" id="cellA"></div>
-      <span class="rentlab">рента с гостя<b id="rentA">0</b></span>
+  <div class="hud">
+    <div class="who a" id="hud0"><div class="whead"><span class="sq"></span><span class="ell" id="nm0">Вы</span><span class="turn">ходит</span></div>
+      <div class="vrow"><span class="val" id="money0">0</span><span class="dbadge" id="dslot0" hidden></span></div>
+      <span class="sub" id="sub0"></span><div class="bar" id="bar0"><i id="cap0"></i></div><span class="capv" id="capv0"></span></div>
+    <div class="who b" id="hud1"><div class="whead"><span class="sq"></span><span class="ell" id="nm1">Соперник</span><span class="turn">ходит</span></div>
+      <div class="vrow"><span class="val" id="money1">0</span><span class="dbadge" id="dslot1" hidden></span></div>
+      <span class="sub" id="sub1"></span><div class="bar" id="bar1"><i id="cap1"></i></div><span class="capv" id="capv1"></span></div>
+  </div>
+
+  <div class="board">
+    <div class="cells">
+      <div class="cell a" id="cellA"><span class="cttl ell" id="ttlA">ваша клетка</span><div class="pawns" id="pawnsA"></div><span class="rent" id="rentA"></span></div>
+      <div class="cell b" id="cellB"><span class="cttl ell" id="ttlB">клетка соперника</span><div class="pawns" id="pawnsB"></div><span class="rent" id="rentB"></span></div>
     </div>
-    <div class="coinwrap"><div class="coin" id="coin">—</div><span class="coinlab" id="note">монетка</span></div>
-    <div class="cellwrap">
-      <span class="cellttl" id="ttlB">клетка соперника</span>
-      <div class="cell foes" id="cellB"></div>
-      <span class="rentlab">рента с гостя<b id="rentB">0</b></span>
+    <div class="coinrow">
+      <span class="chip l" id="chip0"><b>0</b> — на месте</span>
+      <div class="coin" id="coin" role="img" aria-label="Монетка: ещё не брошена">?</div>
+      <span class="chip r" id="chip1"><b>1</b> — переход</span>
     </div>
   </div>
 
+  <div class="event" id="event" hidden></div>
   <div class="toks" id="toks"></div>
-  <p class="msg" id="msg"></p>
-  <div class="acts" id="acts"></div>
+  <div class="action" id="acts"></div>
 
   <div class="sheet">
+    <span class="grip"></span>
     <div class="tabs">
       <button class="tab" data-tab="perks">Перки</button>
-      <button class="tab" data-tab="foe">Бот</button>
+      <button class="tab" data-tab="foe">Соперник</button>
       <button class="tab" data-tab="log">Лог</button>
       <button class="tab" data-tab="rules">Правила</button>
     </div>
-    <div class="pane" data-tab="perks"><div class="perks" id="perks"></div></div>
-    <div class="pane" data-tab="foe" hidden><ul class="foeperks" id="foeperks"></ul></div>
+    <div class="pane" data-tab="perks"><div class="list" id="perks"></div></div>
+    <div class="pane" data-tab="foe" hidden><div class="list" id="foeperks"></div></div>
     <div class="pane" data-tab="log" hidden><ul class="log" id="log"></ul></div>
     <div class="pane" data-tab="rules" hidden><div class="rules" id="rules"></div></div>
   </div>
-</div>
-<div class="overlay" id="ov" hidden><div class="panelbox" id="panel"></div></div>
+</div></div>
+<div class="overlay" id="ov" hidden><div class="page" id="panel"></div></div>
 <script>
 const MAXLV=10, BASE_SALARY=60;
 /* Доля ренты, которая достаётся владельцу; остальное сгорает. Балансовый рычаг:
@@ -314,16 +419,16 @@ function foeColor(from){
   COLORS.forEach(([c,n,ch])=>{const d=Math.min(Math.abs(ch-h),360-Math.abs(ch-h));if(d>bd){bd=d;best=[c,n,ch]}});
   return best;
 }
-const GOLD=[[180,'скромный старт'],[260,'обычный старт'],[400,'богатый старт']];
+const GOLD=[[180,'скромный'],[260,'обычный'],[400,'богатый']];
 const TOKENS={
   reroll:{n:'Переброс',d:'Если бросок уводит в гости, можно перебросить.',price:60},
   anchor:{n:'Якорь',d:'Вместо броска остаться на месте.',price:80},
   dash:{n:'Рывок',d:'Вместо броска шагнуть на соседнюю клетку.',price:80},
 };
 const TK=Object.keys(TOKENS);
-const DIFFS={easy:['Новичок','Копит деньги и строится медленно'],normal:['Делец','Держит запас и ровно поднимает перки'],hard:['Акула','Смотрит, что вы строите, и отвечает: ранняя Аренда, Рэкет против вашей ренты, дальше Контора']};
+const DIFFS={easy:['Новичок','копит и строится медленно'],normal:['Делец','держит запас, ровно поднимает перки'],hard:['Акула','отвечает на ваши перки']};
 let cfg={color:'#7B61FF',start:260,diff:'normal',goal:600,speed:'normal',draft:true,sound:true,haptic:true};
-const GOALS=[[0,'выключена'],[450,'быстрая'],[600,'обычная'],[900,'долгая']];
+const GOALS=[[0,'выкл'],[450,'быстрая'],[600,'обычная'],[900,'долгая']];
 /* Темп — это только длительность пауз, на правила он не влияет. Партия в 65 кругов
    при «обычном» идёт около 4,5 минут, при «быстром» — меньше двух. */
 const SPEED={slow:[1.5,'спокойно'],normal:[1,'обычно'],fast:[.45,'быстро'],instant:[0,'мгновенно']};
@@ -372,9 +477,13 @@ const sfx={
   win:()=>{[523,659,784,1046].forEach((f,i)=>tone(f,.18,'sine',.08,i*.12));hap('success')},
   lose:()=>{[392,330,262].forEach((f,i)=>tone(f,.22,'triangle',.08,i*.15));hap('error')},
 };
-const goal=()=>cfg.goal;
+const goal=()=>table.goal;
 try{Object.assign(cfg,JSON.parse(localStorage.getItem('duel-cfg'))||{})}catch(e){}
 if(!GOALS.some(([g])=>g===cfg.goal))cfg.goal=600;   // порог пересчитан, старое сохранённое значение недостижимо
+/* Настройки партии фиксируются в resetTable(): cfg — это выбор на СЛЕДУЮЩУЮ партию, и если
+   читать его на лету, смена цели или соперника в меню меняла бы правила посреди игры. */
+const tableFrom=o=>({goal:o.goal,diff:o.diff,start:o.start,draft:!!o.draft});
+let table=tableFrom(cfg);
 const saveCfg=()=>{try{localStorage.setItem('duel-cfg',JSON.stringify(cfg))}catch(e){}};
 const PERKS=[
   {k:'rent',n:'Аренда',d:'Рента, которую платит соперник, попав на ваш квадрат.',
@@ -386,10 +495,10 @@ const PERKS=[
    cost:[35,50,65,85,110,140,180,230,295,375], unlock:()=>true},
   {k:'shield',n:'Страховка',d:'Скидка на ренту, которую вы платите сопернику.',
    val:l=>6*l, fmt:l=>{const r=P[1]?Math.round(rentOf(P[1])*inflation()):0;
-     return l?`платите на ${6*l}% меньше${r?`: ${Math.max(0,Math.round(r*(1-6*l/100)))} вместо ${r}`:''}`:`платите полную ренту${r?`: ${r}`:''}`},
+     return l?`на ${6*l}% меньше${r?`: ${Math.max(0,Math.round(r*(1-6*l/100)))} вместо ${r}`:''}`:`платите полную ренту${r?`: ${r}`:''}`},
    cost:[40,55,75,95,120,155,200,255,325,410], unlock:()=>true},
   {k:'route',n:'Логистика',d:'Бонус за возвращение домой с чужого квадрата.',
-   val:l=>36*l, fmt:l=>`+${36*l} за возвращение`,
+   val:l=>36*l, fmt:l=>l?`+${36*l} за возвращение`:'бонуса нет',
    cost:[45,60,80,105,135,175,225,285,360,450], unlock:p=>total(p)>=3},
   {k:'raid',n:'Рэкет',d:'Стоя в гостях, вы забираете часть ренты соперника обратно.',
    val:l=>12*l, fmt:l=>{const foe=P[1],r=foe?Math.round(rentOf(foe)*inflation()*.12*l):0;
@@ -405,7 +514,7 @@ const HOWTO={
   route:'Начисляется только в тот ход, когда вы вернулись домой из гостей. Если вы просто остались дома, бонуса нет. Хорошо сочетается с Рывком: жетон гарантирует возвращение.',
   raid:'Пока вы стоите в гостях, вы забираете у соперника часть его же ренты. Считается процентом от неё, поэтому это прямой ответ тому, кто вложился только в Аренду: при высоких уровнях визит к нему перестаёт быть убыточным.',
 };
-const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:cfg.start,built:false,seen:{},streak:0,ban:null,off:{},tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
+const mk=(name,color,pos,bot)=>({name,color,pos,bot,money:table.start,built:false,seen:{},streak:0,ban:null,off:{},tok:{reroll:0,anchor:0,dash:0},tokBuys:{reroll:0,anchor:0,dash:0},cd:-99,force:null,st:{wage:0,got:0,paid:0,raid:0,route:0,away:0,home:0,sold:0,peak:0,bought:0,toks:0,tax:0,ones:0,zeros:0},lv:Object.fromEntries(PK.map(k=>[k,0]))});
 let P=[],turn=0,over=false,busy=false,rounds=0,gen=0,logs=[],coin='—',msg='',acts=[],botPlan=[];
 const STALE={};
 /* Мультиплеер. mySeat запрещено трогать в правилах и в логике бота — у клиентов он
@@ -487,7 +596,7 @@ async function evAsk(seat,text,btns,def){
   const seq=evCur;
   if(def===undefined)def=btns[btns.length-1][1];
   if(seat===mySeat){
-    msg=text;
+    msg=text;askText=text;
     acts=btns.map(([l,val,gh])=>[l,()=>evEmit({kind:'act',seat,seq,v:val}),gh]);
   } else {
     msg=`${P[seat].name} решает…`;acts=[];
@@ -495,7 +604,7 @@ async function evAsk(seat,text,btns,def){
   }
   render();
   const ev=await evStall(seq,seat,()=>evEmit({kind:'act',seat,seq,v:def}));
-  acts=[];
+  acts=[];askText='';
   return ev.v;
 }
 const $=id=>document.getElementById(id);
@@ -505,7 +614,7 @@ const shown=[],tweens=[],pendingHits=[];
 function inflFlash(){
   render();
   ['rentA','rentB'].forEach(id=>{
-    const box=$(id)&&$(id).parentElement;if(!box)return;
+    const box=$(id);if(!box)return;
     box.classList.remove('bump');void box.offsetWidth;box.classList.add('bump');
     setTimeout(()=>box.classList.remove('bump'),vis(1100));
   });
@@ -532,10 +641,6 @@ function showMoney(i,to){
   const from=shown[i];
   if(from===to){el.textContent=to;return}
   shown[i]=to;
-  const txt=(to>from?'+':'−')+Math.abs(to-from),cls=to>from?'plus':'minus';
-  const slot=$('dslot'+i);
-  if(slot){const d=document.createElement('span');d.className='delta '+cls;d.textContent=txt;
-    slot.appendChild(d);setTimeout(()=>d.remove(),vis(1700))}
   if(typeof requestAnimationFrame!=='function'){el.textContent=to;return}
   if(tweens[i])cancelAnimationFrame(tweens[i]);
   const t0=performance.now(),dur=vis(520);
@@ -604,13 +709,13 @@ function paintNames(html){
 }
 function renderLog(){$('log').innerHTML=logs.map((t,i)=>`<li${i?'':' class="fresh"'}>${paintNames(escHtml(t))}</li>`).join('')}
 function renderRules(){
-  const g=cfg.goal, E=INFL_EVERY;
+  const g=table.goal, E=INFL_EVERY;
   $('inflNote').innerHTML=`Каждые ${E} кругов рента дорожает на 10% от исходной: на ${E}-м круге платежи идут по ×1,1, на ${E*2}-м по ×1,2 и так далее. Растёт только рента, зарплата и цены перков остаются прежними, поэтому затянутая партия всё сильнее бьёт по тому, кто чаще ходит в гости. В тот же момент срабатывает налог на лидера: у кого больше денег на руках, тот отдаёт сопернику 10% разницы.`;
   $('rules').innerHTML=`
   <h3>Цель</h3>
   <p>Разорить соперника${g?` или первым накопить <b>${g}</b> на руках. Вложенное в перки и жетоны не считается`:''}.</p>
 
-  ${cfg.draft?`<h3>Драфт</h3>
+  ${table.draft?`<h3>Драфт</h3>
   <p>Перед первым броском каждый закрывает сопернику один перк на всю партию. Выбор скрыт, пока не решат оба. Закрытый перк не поднять ни разу, поэтому у каждого свой набор из четырёх, и одинакового дебюта не бывает.</p>`:''}
 
   <h3>Ход</h3>
@@ -658,101 +763,136 @@ renderRules();
 
 let tab='perks',note='',openInfo='',finished=true,showInfl=false;
 const ring=(l,cls)=>`<span class="ring ${cls}" style="--p:${l*36}deg"><b>${l}</b></span>`;
+const LOCK='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+/* Косметика хода: кто бросал последним, что показать в карточке события и какой вопрос
+   сейчас задан игроку. В расчёт партии не входит, поэтому здесь можно meP()/mySeat. */
+let lastFlip=null,evCard=null,askText='';
+const cls=p=>p===meP()?'a':'b';
+const sgn=v=>(v>=0?'+':'−')+Math.abs(v);
+const plural=(n,one,few,many)=>{const a=n%10,b=n%100;return a===1&&b!==11?one:a>=2&&a<=4&&(b<12||b>14)?few:many};
+const SPEED_LABEL={slow:'×½',normal:'×1',fast:'×2',instant:'⚡'};
 function render(){
   if(replaying)return;
   const me=meP(),foe=foeP();
   if(!me||!foe)return;
-  const ord=dOrder();
+  const ord=dOrder(),g=goal();
+  // карточки игроков
   ord.forEach((seat,i)=>{
-    const p=P[seat];
+    const p=P[seat],hud=$('hud'+i);
     showMoney(i,p.money);
     $('nm'+i).textContent=i===0?'Вы':p.name;
-    $('hud'+i).classList.toggle('acting',turn===seat&&!over);
-    $('hud'+i).classList.toggle('away',!atHome(p));
+    hud.classList.toggle('acting',turn===seat&&!over);
     const n=p.streak||0;
     $('sub'+i).textContent=atHome(p)
       ?(n>=2?'дома 2 хода подряд · следующий ход — переход':`дома · зарплата ${salary(p)}`)
       :(n>=2?'в гостях 2 хода подряд · следующий ход — домой':'в гостях · платит ренту');
-    $('hud'+i).classList.toggle('tired',n>=2);
-    $('cap'+i).style.width=goal()?(Math.min(1,capital(p)/goal())*100).toFixed(0)+'%':'0%';
-    $('capv'+i).textContent=goal()?`до победы: ${p.money} из ${goal()}`:'';
+    hud.classList.toggle('tired',n>=2);
+    $('bar'+i).hidden=!g;
+    $('cap'+i).style.width=g?(Math.min(1,capital(p)/g)*100).toFixed(0)+'%':'0%';
+    $('capv'+i).textContent=g?`${p.money} из ${g} до победы`:'';
+    const d=evCard&&evCard.deltas?evCard.deltas[seat]:0,db=$('dslot'+i);
+    db.hidden=!d;if(d){db.textContent=sgn(d);db.className='dbadge '+(d>0?'pos':'neg')}
   });
+  // поле
   $('ttlA').textContent='ваша клетка';
   $('ttlB').textContent='клетка '+foe.name;
-  const inf0=inflation();
+  const inf=inflation(),mult=inf.toFixed(1).replace('.',',');
   [['rentA',me],['rentB',foe]].forEach(([id,p])=>{
-    const base=rentOf(p),now=Math.round(base*inf0);
-    const paused=p.off.rent&&p.lv.rent>0;
-    $(id).innerHTML=`${now}${inf0>1&&base?`<u>×${inf0.toFixed(1).replace('.',',')}</u>`:''}${paused?`<i>Аренда ${p.lv.rent} ур. выключена</i>`:''}`;
+    const el=$(id),base=rentOf(p);
+    if(p.off.rent&&p.lv.rent>0){el.className='rent off';el.textContent=`Аренда ${p.lv.rent} ур. выключена`;return}
+    el.className='rent'+(el.classList.contains('bump')?' bump':'');
+    el.innerHTML=`рента <b>${Math.round(base*inf)}</b>${inf>1&&base?`<u>×${mult}</u>`:''}`;
   });
   ['A','B'].forEach((sfx,i)=>{
-    const cellIdx=ord[i],box=$('cell'+sfx);
-    box.innerHTML=P.filter(q=>q.pos===cellIdx).map(q=>`<span class="pawn ${q===me?'a':'b'}${atHome(q)?'':' guest'}" id="pawn${q===me?0:1}">${q===me?'Вы':q.name}</span>`).join('');
+    const cellIdx=ord[i];
+    $('pawns'+sfx).innerHTML=P.filter(q=>q.pos===cellIdx).sort((x,y)=>atHome(y)-atHome(x)).map(q=>
+      `<span class="pawn ${cls(q)} ell${atHome(q)?'':' guest'}" id="pawn${q===me?0:1}">${q===me?'Вы':escHtml(q.name)}</span>`).join('');
   });
   flushHits();
-  $('coin').textContent=coin;$('coin').classList.toggle('flip',busy);
-  const nl=$('note');
-  if(nl){
-    if(note){nl.textContent=note;nl.className='coinlab live '+(note==='переход'?'go':'stay')}
-    else{
-      nl.textContent=me.streak>=2?'переход обязателен':'монетка';
-      nl.className='coinlab'+(me.streak>=2?' live go':'');
-    }
-  }
-  $('msg').textContent=msg;
-  const inf=inflation();
+  // монетка и чипы исхода: залит тот, что выпал, цветом бросавшего
+  $('coin').textContent=coin;$('coin').classList.toggle('flip',busy&&!note);
+  $('coin').setAttribute('aria-label',coin==='?'?'Монетка: ещё не брошена':`Монетка: выпало ${coin}`);
+  const hit=note&&lastFlip?(note==='переход'?1:0):-1;
+  [0,1].forEach(v=>{$('chip'+v).className='chip '+(v?'r':'l')+(hit===v?' hit-'+lastFlip.c:'')});
+  // карточка события: вопрос игроку важнее итога броска
+  const ev=$('event');
+  if(askText){ev.hidden=false;ev.className='event';ev.innerHTML=`<span class="ttl">${escHtml(askText)}</span>`}
+  else if(evCard){
+    ev.hidden=false;ev.className='event'+(evCard.tone?' '+evCard.tone:'');
+    ev.innerHTML=`${evCard.pre?`<span class="pre">${escHtml(evCard.pre)}</span>`:''}<span class="ttl">${escHtml(evCard.title)}</span>`
+      +(evCard.chips.length?`<div class="chips">${evCard.chips.map(c=>`<span class="echip ell ${c.k}">${escHtml(c.t)}</span>`).join('')}</div>`:'');
+  } else ev.hidden=true;
+  // верхняя строка
   $('round').textContent=rounds+1;
-  $('infl').textContent=`+${Math.round((inf-1)*100)}%`;
-  $('infl').className='pill'+(inf>1?' hot':'');
+  const left=INFL_EVERY-(rounds%INFL_EVERY);
+  $('inflNow').textContent=`+${Math.round((inf-1)*100)}%`;
+  $('inflnext').textContent=`+${Math.round(inf*100)-90}% через ${left} ${plural(left,'круг','круга','кругов')}`;
+  $('infl').classList.toggle('hot',inf>1);
+  $('infl').setAttribute('aria-label',`Инфляция ренты: сейчас плюс ${Math.round((inf-1)*100)} процентов, через ${left} ${plural(left,'круг','круга','кругов')} станет плюс ${Math.round(inf*100)-90}`);
   $('inflNote').hidden=!showInfl;
-  $('inflnext').textContent=INFL_EVERY-(rounds%INFL_EVERY);
-  $('speedBtn').textContent='темп: '+(SPEED[cfg.speed]||SPEED.normal)[1];
-  $('sndBtn').textContent=cfg.sound?'🔊':'🔇';$('sndBtn').setAttribute('aria-pressed',cfg.sound);
-  $('hapBtn').style.opacity=cfg.haptic?1:.4;$('hapBtn').setAttribute('aria-pressed',cfg.haptic);
+  $('speedBtn').textContent=SPEED_LABEL[cfg.speed]||'×1';
+  $('speedBtn').setAttribute('aria-label',`Темп анимации: ${(SPEED[cfg.speed]||SPEED.normal)[1]}, нажмите, чтобы сменить`);
+  // главная кнопка, ответы на вопрос или строка «Сейчас ходит»
   const a=$('acts');a.innerHTML='';
-  acts.forEach(([label,fn,ghost,dis])=>{const b=document.createElement('button');b.className='btn'+(ghost?' ghost':'');b.textContent=label;b.disabled=!!dis;b.onclick=fn;a.appendChild(b)});
-  const home=atHome(me),locked=!idleCtx||over;
+  const mine=!!idleCtx&&!over;
+  if(acts.length&&!mine){
+    const two=acts.length<=2,row=document.createElement('div');row.className=two?'row':'action';
+    acts.forEach(([label,fn,ghost])=>{const b=document.createElement('button');b.className='main'+(ghost?' alt':'');b.textContent=label;b.onclick=fn;row.appendChild(b)});
+    a.appendChild(row);
+  } else if(mine||(P[turn]===me&&!over)){
+    const b=document.createElement('button');b.className='main';b.textContent='Бросить монетку';
+    b.disabled=!mine;if(mine)b.onclick=acts[0][1];a.appendChild(b);
+  } else if(!over){
+    const p=P[turn];
+    a.innerHTML=`<div class="statusline ${cls(p)}" role="status"><span class="sq"></span><span class="ell">Сейчас ходит ${escHtml(p.name)}</span></div>`;
+  }
+  // жетоны под полем
+  const home=atHome(me),locked=!idleCtx||over,cd=cdLeft(me);
+  $('toks').innerHTML=TK.map(k=>{
+    const t=TOKENS[k],have=me.tok[k];
+    const blocked=k==='anchor'&&me.streak>=2;   // третий ход на месте всё равно станет переходом
+    const usable=!locked&&have>0&&cd===0&&!blocked&&k!=='reroll';
+    const hint=!have?'нет жетонов':blocked?'нельзя: будет переход':cd>0?`перезарядка ${cd}`:k==='reroll'?'сработает при броске'
+      :locked?'не ваш ход':'применить';
+    return `<button class="tk${usable?' can':''}${have?'':' none'}" data-use="${k}" ${usable?'':'disabled'}>
+      <span class="tn"><span>${t.n}</span><span class="cnt">${have}</span></span><span class="th">${hint}</span></button>`}).join('');
+  $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
+  // лист перков
   $('perks').innerHTML=PERKS.map(pk=>{
     const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k),off=!!me.off[pk.k];
-    const why=me.ban===pk.k?'закрыт соперником в драфте'
-      :!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
-      :c===null?'максимум':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
-    return `<div class="card${unlocked?'':' shut'}${me.ban===pk.k?' banned':''}${off?' paused':''}${!why&&!locked?' ready':''}" data-k="${pk.k}" role="button" tabindex="0" aria-disabled="${!!(why||locked)}">
-      ${ring(l,'a')}
-      <span class="nm">${pk.n}<span class="q" data-info="${pk.k}" title="${HOWTO[pk.k]}" role="button" aria-label="Как работает ${pk.n}">?</span></span>
-      <span class="ef">${off?`выключен, сейчас: ${pk.fmt(0)}. Включите — ${pk.fmt(l)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d}</span>
-      <span class="buy">${unlocked&&c!==null?`${off?`уровень ${l+1}: ${pk.fmt(l+1)}, когда включите`:`станет: ${pk.fmt(l+1)}`}`:(why||'')}</span>
-      <span class="side">
-        ${unlocked&&c!==null?`<span class="tag"><i>цена</i><b>${c}</b></span>`:''}
-        ${l>0?`<span class="tog${off?' on':''}${locked?' off':''}" data-tog="${pk.k}" role="button">${off?'включить':'выключить'}</span>`:''}
-      </span>
-      ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}
-    </div>`;
-  }).join('');
-  $('perks').innerHTML+=`<div class="shop"><span>Жетоны монетки — занимают действие хода, в гостях дороже на 50%</span>${TK.map(k=>{
-    const t=TOKENS[k],price=tokPrice(me,k),ok=!me.built&&!locked&&me.money>=price;
-    return `<button class="card${ok?' ready':''}" data-tok="${k}" ${ok?'':'disabled'}>
-      <span class="ring a" style="--p:0deg"><b>${me.tok[k]}</b></span>
-      <span class="nm">${t.n}</span><span class="ef">${t.d}${home?'':' Цена в гостях выше на 50%.'}</span>
-      <span class="tag"><i>цена</i><b>${price}</b></span></button>`}).join('')}</div>`;
-  $('perks').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{if(b.getAttribute('aria-disabled')!=='true'&&idleCtx)idleCtx.send({k:'buy',key:b.dataset.k})});
+    if(me.ban===pk.k)return `<div class="pk banned"><span class="lock">${LOCK}</span><div class="pkbody">
+      <span class="pname">${pk.n}</span><span class="why">закрыт соперником в драфте</span></div></div>`;
+    const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`
+      :c===null?'максимум':locked?'':!home?'только дома':me.built?'уже строили в этом ходу':me.money<c?'мало денег':'';
+    const ready=unlocked&&c!==null&&!why&&!locked;
+    const now=off?`выключен, сейчас: ${pk.fmt(0)}. Включите — ${pk.fmt(l)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d;
+    const next=unlocked&&c!==null?(off?`уровень ${l+1}: ${pk.fmt(l+1)}, когда включите`:`станет: ${pk.fmt(l+1)}`):'';
+    return `<div class="pk${ready?' ready':''}${off?' paused':''}"><div class="pkrow">${ring(l,'a')}
+      <div class="pkbody"><span class="pname">${pk.n}<button class="q" data-info="${pk.k}" aria-label="Как работает ${pk.n}">?</button></span>
+        <span class="now">${now}</span>${next?`<span class="next">${next}</span>`:''}${why?`<span class="why">${why}</span>`:''}
+        ${l>0?`<button class="tog${off?' on':''}" data-tog="${pk.k}" ${locked?'disabled':''}>${off?'включить':'выключить'}</button>`:''}</div>
+      ${c!==null&&unlocked?`<button class="up" data-k="${pk.k}" ${ready?'':'disabled'}><span>поднять</span><b>${c}</b></button>`:''}</div>
+      ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}</div>`;
+  }).join('')+`<div class="shophead"><b>Жетоны монетки</b><span>тоже тратят действие хода</span></div>`
+    +TK.map(k=>{
+      const t=TOKENS[k],price=tokPrice(me,k),ok=!me.built&&!locked&&me.money>=price;
+      return `<div class="tkshop"><span class="num">${me.tok[k]}</span><div class="pkbody"><span class="pname">${t.n}</span>
+        <span class="d">${t.d}${home?'':' Цена в гостях выше на 50%.'}</span></div>
+        <button class="buy" data-tok="${k}" ${ok?'':'disabled'}><span>купить</span><b>${price}</b></button></div>`}).join('');
+  $('perks').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'buy',key:b.dataset.k})});
   $('perks').querySelectorAll('[data-info]').forEach(q=>q.onclick=e=>{e.stopPropagation();openInfo=openInfo===q.dataset.info?'':q.dataset.info;render()});
   $('perks').querySelectorAll('[data-tog]').forEach(q=>q.onclick=e=>{e.stopPropagation();if(idleCtx)idleCtx.send({k:'toggle',key:q.dataset.tog})});
   $('perks').querySelectorAll('[data-tok]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'tok',key:b.dataset.tok})});
-  const canAct=!locked;
-  $('toks').innerHTML=TK.map(k=>{
-    const t=TOKENS[k],have=me.tok[k];
-    const cd=cdLeft(me);
-    const blocked=k==='anchor'&&me.streak>=2;   // третий ход на месте всё равно станет переходом
-    const usable=canAct&&have>0&&cd===0&&!blocked;
-    const hint=blocked?'нельзя: будет переход':cd>0?`перезарядка ${cd}`:k==='reroll'?(have?'сработает при броске':'нет жетонов')
-      :(usable?'применить':have?'не ваш ход':'нет жетонов');
-    return `<button class="tk${usable&&k!=='reroll'?' can':''}" data-use="${k}" ${usable&&k!=='reroll'?'':'disabled'}>
-      <b>${t.n} · ${have}</b><i>${hint}</i></button>`}).join('');
-  $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
-  $('foeperks').innerHTML=PERKS.map(pk=>`<li${foe.ban===pk.k?' class="banned"':foe.off[pk.k]?' class="paused"':''}>${ring(foe.lv[pk.k],'b')}<span><b>${pk.n}</b><i>${foe.ban===pk.k?'закрыт вами в драфте':foe.off[pk.k]?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт'}</i></span></li>`).join('');
+  // перки соперника
+  $('foeperks').innerHTML=PERKS.map(pk=>{
+    const st=foe.ban===pk.k?'banned':foe.off[pk.k]?'paused':'';
+    const txt=st==='banned'?'закрыт вами в драфте':st==='paused'?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт';
+    return `<div class="frow ${st}">${st==='banned'?`<span class="lock">${LOCK}</span>`:ring(foe.lv[pk.k],'b')}
+      <div class="pkbody"><span class="pname">${pk.n}</span><span class="now">${txt}</span></div></div>`}).join('');
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
   document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
+  // экран драфта зависит от кнопок, которые выставляет evAsk, — обновляем его вместе с полем
+  if(draftUI)showDraft();
 }
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{tab=t.dataset.tab;render()});
 $('menuBtn').onclick=()=>showSetup();
@@ -762,8 +902,6 @@ $('speedBtn').onclick=()=>{
   cfg.speed=SPK[(SPK.indexOf(cfg.speed)+1)%SPK.length];saveCfg();render();
 };
 $('infl').onclick=()=>{showInfl=!showInfl;render()};
-$('sndBtn').onclick=()=>{cfg.sound=!cfg.sound;saveCfg();render();if(cfg.sound){unlockAudio();sfx.buy()}};
-$('hapBtn').onclick=()=>{cfg.haptic=!cfg.haptic;saveCfg();render();hap('medium')};
 document.addEventListener('pointerdown',unlockAudio,{passive:true});
 function buy(p,k){
   if(!PK.includes(k)||!atHome(p)||!open(p,k)||p.built)return;
@@ -805,7 +943,7 @@ async function coverDebt(p,need){
   return true;
 }
 async function flip(p){
-  const g=gen;busy=true;acts=[];note='';render();
+  const g=gen;busy=true;acts=[];note='';lastFlip=null;evCard=null;render();
   const alive=()=>g===gen&&!over;
   let v;
   // значение просим сразу, анимация крутится параллельно — сетевая задержка прячется под ней
@@ -813,7 +951,8 @@ async function flip(p){
     for(let i=0;i<7;i++){coin=Math.random()<.5?'1':'0';render();sfx.tick();await sleep(60);if(!alive())throw STALE}
     return await pr;
   };
-  if(p.force){v=p.force==='stay'?0:1;coin=String(v);msg=`${p.name}: жетон вместо броска`;render();await sleep(500)}
+  let pre='';
+  if(p.force){v=p.force==='stay'?0:1;coin=String(v);msg=`${p.name}: жетон вместо броска`;pre=`жетон «${p.force==='stay'?'Якорь':'Рывок'}» вместо броска`;render();await sleep(500)}
   else{
     const pr=evCoin(p.id);pr.catch(()=>{});
     v=await spin(pr);coin=String(v);render();
@@ -840,6 +979,8 @@ async function flip(p){
   const beforeRect=rectOf(p);
   const wasHome=atHome(p);
   if(v===1)sfx.go();else sfx.stay();
+  if(forced)pre='третий ход на месте — переход принудительно';
+  lastFlip={c:cls(p)};
   if(v===1){p.pos=1-p.pos;note='переход';
     msg=forced?`${p.name}: третий ход на месте — переход принудительно`:`${p.name}: выпала 1, шаг на соседнюю клетку`}
   else {msg=`${p.name}: выпал 0, остаётся на месте`;note='на месте'}
@@ -849,6 +990,8 @@ async function flip(p){
     let gain=salary(p);let extra='';
     if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
     p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
+    evCard={pre,title:`${p.name} дома: зарплата ${salary(p)}${extra}`,chips:[{t:`${p.name} +${gain}`,k:'pos'}],
+      deltas:{[p.id]:gain},tone:p===meP()?'good':''};
     if(p===meP())sfx.gain();
   } else {
     const foe=P[p.pos],r=payFor(p,foe);
@@ -869,6 +1012,13 @@ async function flip(p){
         ?`${p.name}: в гостях, рента ${r}, половина сгорает, Рэкет возвращает гостю ${take}. ${tally}`
         :`${p.name}: в гостях, рента ${r}, половина сгорает. ${tally}`;
     log(msg);
+    {const chips=!r&&!take?[]:[{t:`${p.name} ${sgn(take-r)}`,k:take-r<0?'neg':take-r>0?'pos':'zero'},
+        {t:`${foe.name} ${sgn(keep-take)}`,k:keep-take<0?'neg':keep-take>0?'pos':'zero'}];
+      if(take)chips.push({t:`Рэкет +${take}`,k:'zero'});
+      if(r-keep>0)chips.push({t:`сгорело ${r-keep}`,k:'zero'});
+      const mine=p===meP()?take-r:foe===meP()?keep-take:0;
+      evCard={pre,title:!r&&!take?`${p.name} в гостях: ренты нет`:`${p.name} в гостях: рента ${r}, половина сгорает`,chips,
+        deltas:{[p.id]:take-r,[foe.id]:keep-take},tone:mine<0?'bad':mine>0?'good':''}}
     if(r||take){if(p===meP())sfx.pay();else if(foe===meP())sfx.gain()}
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
   }
@@ -921,17 +1071,17 @@ function sharkBuild(p){
   if((p.lv.office>=6||!open(p,'office'))&&can('route'))return buy(p,'route');
 }
 function botBuild(p){
-  if(cfg.diff==='hard')return sharkBuild(p);
+  if(table.diff==='hard')return sharkBuild(p);
   if(p.built)return;
   if(!atHome(p)){
     if(p.tok.dash===0&&cdLeft(p)===0&&payFor(p,foeOf(p))>salary(p)&&p.money-tokPrice(p,'dash')>payFor(p,foeOf(p)))buyToken(p,'dash');
     return;
   }
-  if(cfg.diff==='easy'&&rnd()<.35)return;
-  const k=cfg.diff==='easy'?3.5:cfg.diff==='hard'?1:2;
-  const reserve=Math.round(payFor(p,foeOf(p))*k)+(cfg.diff==='hard'?20:cfg.diff==='easy'?90:50);
+  if(table.diff==='easy'&&rnd()<.35)return;
+  const k=table.diff==='easy'?3.5:table.diff==='hard'?1:2;
+  const reserve=Math.round(payFor(p,foeOf(p))*k)+(table.diff==='hard'?20:table.diff==='easy'?90:50);
   const can=botPlan.filter(k=>open(p,k)&&cost(p,k)!==null&&p.money-cost(p,k)>=reserve);
-  const wantTok=cfg.diff==='hard'?.35:cfg.diff==='easy'?.1:.2;
+  const wantTok=table.diff==='hard'?.35:table.diff==='easy'?.1:.2;
   const tot=TK.reduce((s,k)=>s+p.tok[k],0);
   if(tot<3&&rnd()<wantTok){
     const k=payFor(p,foeOf(p))>salary(p)?'reroll':'anchor';
@@ -952,15 +1102,17 @@ function botTokens(p){
    первый бан не виден ни в перках, ни в логе. Иначе второй банил бы, зная ответ. */
 function botBan(p){
   const r=rnd();
-  if(cfg.diff==='easy')return PK[r*PK.length|0];
-  if(cfg.diff==='normal')return r<.5?'rent':'office';
+  if(table.diff==='easy')return PK[r*PK.length|0];
+  if(table.diff==='normal')return r<.5?'rent':'office';
   return r<.6?'route':'office';   // Акула закрывает то, чем её чаще всего обыгрывают
 }
 async function draftPhase(){
-  if(!cfg.draft)return;
+  if(!table.draft)return;
   const bans=[];
+  draftUI={chooser:0,pick:null};
   for(let i=0;i<2;i++){
     const p=P[i];
+    draftUI.chooser=i;showDraft();
     /* botBan двигает ГПСЧ, поэтому вызывается ровно один раз и на всех клиентах
        одинаково — даже когда банит человек и значение уходит в запас. */
     const dflt=botBan(p);
@@ -974,6 +1126,7 @@ async function draftPhase(){
     if(over)return;
     bans[1-i]=k;   // банят сопернику, а не себе
   }
+  draftUI=null;$('ov').hidden=true;
   P[0].ban=bans[0];P[1].ban=bans[1];
   log(`Драфт: ${P[0].name} — без перка «${perk(bans[0]).n}», ${P[1].name} — без перка «${perk(bans[1]).n}»`);
   msg=`Драфт закрыт. ${P[0].name}: нет «${perk(bans[0]).n}». ${P[1].name}: нет «${perk(bans[1]).n}».`;
@@ -1035,29 +1188,78 @@ function renderIdle(p,seq){
   acts=[['Бросить монетку',()=>send({k:'roll'})]];
   render();
 }
+/* ---------- страницы поверх игры ---------- */
+const XICON='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+// разряды — обычным пробелом: неразрывный из toLocaleString шрифт Unbounded рисует нулевой ширины
+const fmtN=n=>String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+// keep — перерисовка той же страницы (щелчок по настройке): прокрутку не сбрасываем
+function openPage(html,kind,keep){
+  const ov=$('ov'),y=ov.scrollTop,p=$('panel');
+  p.className='page'+(kind?' '+kind:'');p.innerHTML=html;ov.hidden=false;ov.scrollTop=keep?y:0;
+}
+const opt=(attr,val,on,b,sub,center)=>`<button class="opt${center?' c':''}" ${attr}="${val}" aria-pressed="${!!on}"><b>${b}</b>${sub||''}</button>`;
+// «Следующая партия»: всё это применяется только в resetTable()
+function nextGameFields(colorLabel){
+  return `<div class="fld"><span>${colorLabel}</span><div class="sws">${COLORS.map(([c,n])=>
+      `<button class="sw" data-color="${c}" style="background-color:${c}" aria-label="${n}" aria-pressed="${cfg.color===c}"></button>`).join('')}</div></div>
+    <div class="fld"><span>Стартовое золото</span><div class="grid g3">${GOLD.map(([g,n])=>opt('data-gold',g,cfg.start===g,g,n)).join('')}</div></div>
+    <div class="fld"><span>Победа по накоплениям</span><div class="grid g4">${GOALS.map(([g,n])=>opt('data-goal',g,cfg.goal===g,g||'нет',n)).join('')}</div></div>
+    <div class="fld"><span>Драфт перков</span><div class="grid g2">${opt('data-draft',1,cfg.draft,'вкл','каждый закрывает сопернику один перк')}${opt('data-draft',0,!cfg.draft,'выкл','все пять перков доступны обоим')}</div></div>
+    <div class="fld"><span>Соперник</span><div class="grid g3">${Object.entries(DIFFS).map(([k,[n,d]])=>opt('data-diff',k,cfg.diff===k,n,d)).join('')}</div></div>`;
+}
+// звук, вибрация и темп применяются сразу; вибрация есть только в Telegram
+function liveFields(tempoLabel){
+  return `<div class="fld"><span>${inTG?'Звук и вибрация':'Звук'}</span><div class="grid g2">
+      <button class="swt" role="switch" data-snd aria-checked="${cfg.sound}">Звук<i></i></button>
+      ${inTG?`<button class="swt" role="switch" data-hap aria-checked="${cfg.haptic}">Вибрация<i></i></button>`:''}</div></div>
+    <div class="fld"><span>${tempoLabel}</span><div class="grid g2">${Object.entries(SPEED).map(([k,[,n]])=>opt('data-speed',k,cfg.speed===k,n,'',true)).join('')}</div></div>`;
+}
+function bindSettings(again){
+  const pn=$('panel'),re=()=>{saveCfg();applyColor();again(true)};
+  pn.querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{cfg.color=b.dataset.color;re()});
+  pn.querySelectorAll('[data-gold]').forEach(b=>b.onclick=()=>{cfg.start=+b.dataset.gold;re()});
+  pn.querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{cfg.goal=+b.dataset.goal;re()});
+  pn.querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>{cfg.draft=b.dataset.draft==='1';re()});
+  pn.querySelectorAll('[data-diff]').forEach(b=>b.onclick=()=>{cfg.diff=b.dataset.diff;re()});
+  pn.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{cfg.speed=b.dataset.speed;render();re()});
+  pn.querySelectorAll('[data-snd]').forEach(b=>b.onclick=()=>{cfg.sound=!cfg.sound;re();if(cfg.sound){unlockAudio();sfx.buy()}});
+  pn.querySelectorAll('[data-hap]').forEach(b=>b.onclick=()=>{cfg.haptic=!cfg.haptic;re();hap('medium')});
+  if($('play'))$('play').onclick=reset;
+  if($('goRoom'))$('goRoom').onclick=()=>mpConnect('');
+  if($('goStats'))$('goStats').onclick=showStats;
+}
 function end(winner,reason){
   over=true;finished=true;busy=false;acts=[];idleCtx=null;replaying=false;   // партия могла кончиться прямо в перемотке
   const win=winner===meP();
-  const foe=foeP();
-  recordResult(win,reason==='capital'?'capital':gaveUp?'surrender':'bankrupt');
+  const me=meP(),foe=foeP();
+  const why=reason==='capital'?'capital':gaveUp?'surrender':'bankrupt';
+  recordResult(win,why);
   win?sfx.win():sfx.lose();
   const cause=reason==='capital'
     ? (win?`Вы накопили ${goal()} и выиграли экономически.`:`${foe.name} накопил ${goal()} и выиграл экономически.`)
     : (win?`${foe.name} обанкротился.`:'У вас закончились деньги и перки.');
-  $('panel').innerHTML=`<h2>${win?'Победа':'Поражение'}</h2>
-    <p>${cause}</p>
-    <div class="stats">
-      <div class="srow head"><span></span><b>вы</b><b>${foe.name}</b></div>
-      ${[['заработано зарплатой','wage'],['получено ренты','got'],['отдано ренты','paid'],
-         ['снято Рэкетом','raid'],['бонус Логистики','route'],['ходов в гостях','away'],
-         ['куплено уровней','bought'],['продано уровней','sold'],['самая дорогая рента','peak'],
-         ['потрачено жетонов','toks'],['отдано налогом лидера','tax'],
-         ['выпало единиц','ones'],['выпало нулей','zeros']]
-        .map(([t,k])=>`<div class="srow"><span>${t}</span><b>${meP().st[k]}</b><b>${foe.st[k]}</b></div>`).join('')}
-    </div>
-    <p>Кругов сыграно: ${rounds+1}.${goal()?'':' Победа по накоплениям была выключена.'} Инфляция на финише: +${Math.round((inflation()-1)*100)}%.</p>
-    <div class="acts"><button class="btn" id="again">Ещё раз</button><button class="btn ghost" id="setup">Настройки</button></div>`;
-  $('ov').hidden=false;$('setup').onclick=showSetup;render();
+  // тег проигравшего — как именно проиграл
+  const lostTag={capital:'по накоплениям',surrender:'сдача',bankrupt:'банкрот'}[why];
+  const card=(p,c,won)=>`<div class="rcard ${c}"><span class="nm"><span class="sq"></span><span class="ell">${p===me?'Вы':escHtml(p.name)}</span></span>
+    <b>${fmtN(p.money)}</b><span class="rtag${won?'':' lost'}">${won?'победа':lostTag}</span></div>`;
+  const legend=`<div class="legend"><span><i class="sq a"></i><span class="ell">Вы</span></span><span><i class="sq b"></i><span class="ell">${escHtml(foe.name)}</span></span></div>`;
+  const metric=(t,k)=>{
+    const a=me.st[k],b=foe.st[k],m=Math.max(a,b);
+    const bar=(v,c)=>`<div class="brow ${c}"><i><i style="width:${m?Math.round(v/m*100):0}%"></i></i><b class="${v>0&&v>=(c==='a'?b:a)?'':'lo'}">${fmtN(v)}</b></div>`;
+    return `<div class="metric"><span>${t}</span>${bar(a,'a')}${bar(b,'b')}</div>`;
+  };
+  openPage(`<div class="rhero"><div class="stack" style="gap:4px"><span class="meta">круг ${rounds+1} · инфляция +${Math.round((inflation()-1)*100)}%</span>
+      <h1>${win?'Победа':'Поражение'}</h1><p>${escHtml(cause)}</p></div>
+      <div class="rcards">${card(me,'a',win)}${card(foe,'b',!win)}</div></div>
+    <div class="two"><button class="bmain" id="again">Ещё раз</button><button class="bline" id="setup">Настройки</button></div>
+    <div class="rblock"><div class="rbh"><b class="sttl">Деньги</b>${legend}</div>
+      ${[['заработано зарплатой','wage'],['получено ренты','got'],['отдано ренты','paid'],['бонус Логистики','route'],
+         ['снято Рэкетом','raid'],['отдано налогом лидера','tax']].map(([t,k])=>metric(t,k)).join('')}</div>
+    <div class="rblock tbl"><div class="rbh"><b class="sttl">Ходы</b>${legend}</div>
+      ${[['ходов в гостях','away'],['куплено уровней','bought'],['продано уровней','sold'],['самая дорогая рента','peak'],
+         ['потрачено жетонов','toks'],['выпало единиц','ones'],['выпало нулей','zeros']]
+        .map(([t,k])=>`<div class="trow"><span>${t}</span><b>${fmtN(me.st[k])}</b><b>${fmtN(foe.st[k])}</b></div>`).join('')}</div>`,'result');
+  $('setup').onclick=showSetup;render();
   // в сетевой партии реванш заказывает хозяин комнаты, а не клиент сам у себя
   $('again').onclick=()=>{
     if(!MP)return reset();
@@ -1065,37 +1267,56 @@ function end(winner,reason){
     else $('again').textContent='Ждём хозяина комнаты';
   };
 }
-function showSetup(){
+function showSetup(keep){
   const running=P.length>0&&!finished;
   if(!running)over=true;
-  $('panel').innerHTML=`<h2>Два квадрата</h2>
-    <p>Монетка решает, шагнёте вы или останетесь. Дома вам платят, в гостях платите вы.</p>
-    <div class="setup">
-      <div class="field"><span>Цвет вашей фишки — соперник возьмёт ${foeColor()[1]}${running?'. Новый цвет — со следующей партии':''}</span><div class="swatches">${COLORS.map(([c,n])=>`<button class="sw${cfg.color===c?' on':''}" data-color="${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div></div>
-      <div class="field"><span>Стартовое золото</span><div class="opts">${GOLD.map(([g,n])=>`<button class="opt${cfg.start===g?' on':''}" data-gold="${g}"><b>${g}</b>${n}</button>`).join('')}</div></div>
-      <div class="field"><span>Победа по накоплениям</span><div class="opts">${GOALS.map(([g,n])=>`<button class="opt${cfg.goal===g?' on':''}" data-goal="${g}"><b>${g||'нет'}</b>${n}</button>`).join('')}</div></div>
-      <div class="field"><span>Драфт перков</span><div class="opts">
-        <button class="opt${cfg.draft?' on':''}" data-draft="1"><b>вкл</b>перед партией каждый закрывает сопернику один перк</button>
-        <button class="opt${cfg.draft?'':' on'}" data-draft="0"><b>выкл</b>все пять перков доступны обоим</button></div></div>
-      <div class="field"><span>Соперник</span><div class="opts">${Object.entries(DIFFS).map(([k,[n,d]])=>`<button class="opt${cfg.diff===k?' on':''}" data-diff="${k}"><b>${n}</b>${d}</button>`).join('')}</div></div>
-      <div class="field"><span>Темп — только длительность пауз, правила не меняет</span><div class="opts">${Object.entries(SPEED).map(([k,[,n]])=>`<button class="opt${cfg.speed===k?' on':''}" data-speed="${k}"><b>${n}</b></button>`).join('')}</div></div>
-    </div>
-    <div class="acts"><button class="btn" id="play">${running?'Начать заново':'Играть с ботом'}</button>
-      <button class="btn ghost" id="goRoom">Играть с человеком</button>
-      ${canRecord()?'<button class="btn ghost" id="goStats">Моя статистика</button>':''}
-      ${running?'<button class="btn ghost" id="goCancel">Вернуться к партии</button>':''}</div>`;
-  $('ov').hidden=false;
-  const re=()=>{saveCfg();applyColor();showSetup()};
-  $('panel').querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{cfg.color=b.dataset.color;re()});
-  $('panel').querySelectorAll('[data-gold]').forEach(b=>b.onclick=()=>{cfg.start=+b.dataset.gold;re()});
-  $('panel').querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{cfg.goal=+b.dataset.goal;re()});
-  $('panel').querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>{cfg.draft=b.dataset.draft==='1';re()});
-  $('panel').querySelectorAll('[data-diff]').forEach(b=>b.onclick=()=>{cfg.diff=b.dataset.diff;re()});
-  $('panel').querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{cfg.speed=b.dataset.speed;re()});
-  $('play').onclick=reset;
-  $('goRoom').onclick=()=>mpConnect('');
-  if($('goStats'))$('goStats').onclick=showStats;
-  if($('goCancel'))$('goCancel').onclick=()=>{$('ov').hidden=true};
+  running?showMenu(keep):showStart(keep);
+}
+function showStart(keep){
+  const st=canRecord();
+  openPage(`<div class="stack" style="gap:12px"><div class="logo"><i></i><i></i></div><h1>Два квадрата</h1>
+      <p class="lead">Монетка решает, шагнёте вы или останетесь. Дома вам платят, в гостях платите вы.</p></div>
+    <div class="stack"><button class="bgold" id="play">Играть с ботом</button>
+      <div class="${st?'two':'stack'}"><button class="bline" id="goRoom">С человеком</button>${st?'<button class="bline" id="goStats">Моя статистика</button>':''}</div></div>
+    <div class="sect"><b class="sttl">Настройки партии</b>${nextGameFields(`Цвет вашей фишки — соперник возьмёт ${foeColor()[1]}`)}${liveFields('Темп — только паузы, правила не меняет')}</div>`,'',keep);
+  bindSettings(showStart);
+}
+function showMenu(keep){
+  const me=meP(),foe=foeP(),st=canRecord();
+  openPage(`<div class="mhead"><div><h1>Меню</h1><span class="ell">партия идёт · круг ${rounds+1} · Вы ${me.money}, ${escHtml(foe.name)} ${foe.money}</span></div>
+      <button class="xbtn" id="goCancel" aria-label="Закрыть меню и вернуться к партии">${XICON}</button></div>
+    <button class="bmain" id="goBack">Вернуться к партии</button>
+    <div class="sect"><div class="shead"><b>В этой партии</b><span>меняется сразу</span></div>${liveFields('Темп анимации')}</div>
+    ${MP?(st?'<button class="bline" id="goStats">Моя статистика</button>':'')
+      :`<div class="sect"><div class="shead"><b>Следующая партия</b><span>применится, когда начнёте заново</span></div>
+        ${nextGameFields('Цвет фишки')}<button class="bline" id="play">Начать заново</button></div>
+      <div class="${st?'two':'stack'}"><button class="bline" id="goRoom">С человеком</button>${st?'<button class="bline" id="goStats">Моя статистика</button>':''}</div>`}`,'',keep);
+  bindSettings(showMenu);
+  $('goCancel').onclick=$('goBack').onclick=()=>{$('ov').hidden=true};
+}
+/* Драфт — свой экран поверх поля. Выбор идёт тем же evAsk, что и раньше: экран лишь
+   нажимает соответствующую кнопку, поэтому порядок событий и синхронизация не меняются. */
+let draftUI=null;
+function showDraft(){
+  if(!draftUI||replaying)return;
+  const me=meP(),foe=foeP(),i=draftUI.chooser;
+  const canPick=i===mySeat&&acts.length>0&&!draftUI.pick;
+  const fn=escHtml(foe.name);
+  // честно: против бота он выбирает после вас; по сети второй игрок видит, что первый уже выбрал
+  const foot=i!==mySeat?`${fn} выбирает…`:mySeat===0?`${fn} выберет после вас, ваш выбор не увидит`:`${fn}: выбор сделан`;
+  const zero={lv:Object.fromEntries(PK.map(k=>[k,0]))};
+  openPage(`<div class="kick"><b><i></i><i></i></b>перед первым броском</div>
+    <h1>Закройте сопернику один перк</h1>
+    <p class="lead">На всю партию. Ваш выбор <span class="dname">${fn}</span> увидит, только когда решит сам.</p>
+    ${PERKS.map(pk=>`<button class="dcard${draftUI.pick===pk.k?' pick':''}" data-ban="${pk.k}" ${canPick?'':'disabled'} ${!canPick&&!draftUI.pick?'data-wait':''}>
+      <div><b>${pk.n}</b><span>${pk.d}</span>${pk.unlock(zero)?'':'<small>открывается после 3 уровней</small>'}</div>
+      <span class="dl">${LOCK}</span></button>`).join('')}
+    <div class="dfoot"><i></i><span class="ell">${foot}</span></div>`,'tight',!!document.querySelector('.dcard'));
+  $('panel').querySelectorAll('[data-ban]').forEach(b=>b.onclick=()=>{
+    if(!canPick)return;
+    const k=b.dataset.ban;draftUI.pick=k;showDraft();sfx.click();
+    setTimeout(()=>{const a=acts.find(x=>x[0]===perk(k).n);if(a)a[1]()},vis(260));
+  });
 }
 /* Цвета фиксируются при старте партии: выбор в меню посреди игры применяется только
    к следующей. В сетевой партии они и так приходят с сервера и меняться не могут. */
@@ -1106,20 +1327,29 @@ function applyColor(){
   const [you,foe]=MP&&mp.cols?mp.cols:live&&tableCols?tableCols:[cfg.color,foeColor()[0]];
   r.style.setProperty('--you',you);
   r.style.setProperty('--foe',foe);
+  r.style.setProperty('--youInk',inkOn(you));
+  r.style.setProperty('--foeInk',inkOn(foe));
 }
-function resetTable(seats,seed){
+function inkOn(hex){
+  const c=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);
+  return .2126*c[0]+.7152*c[1]+.0722*c[2]>.2?'#15131C':'#FFFFFF';
+}
+// t — настройки партии от хозяина комнаты; в одиночной игре берутся из выбранных в меню
+function resetTable(seats,seed,t){
+  table=t||tableFrom(cfg);
   gen++;evReset();rndS=seed|0;gameSeed=seed|0;gaveUp=false;finished=false;
   tableCols=MP?null:[cfg.color,foeColor()[0]];applyColor();renderRules();
   P=seats.map((s,i)=>{const q=mk(s.name,i?'var(--foe)':'var(--you)',i,!!s.bot);q.id=i;return q});
   const plans=[['rent','office','shield','raid','route'],['rent','shield','office','route','raid'],['rent','office','raid','shield','route']];
   botPlan=plans[rnd()*plans.length|0];
-  turn=0;over=false;busy=false;rounds=0;logs=[];coin='—';shown.length=0;idleCtx=null;note='';
+  turn=0;over=false;busy=false;rounds=0;logs=[];coin='?';shown.length=0;idleCtx=null;note='';
+  lastFlip=null;evCard=null;askText='';draftUI=null;
   $('ov').hidden=true;
 }
 function reset(){
   MP=false;mySeat=0;net.mode='local';
   resetTable([{name:'Вы'},{name:'Бот',bot:true}],Math.random()*0x7FFFFFFF|0);
-  log(`Партия началась. У каждого по ${cfg.start}, зарплата дома ${BASE_SALARY}. Соперник: ${DIFFS[cfg.diff][0]}.`);
+  log(`Партия началась. У каждого по ${table.start}, зарплата дома ${BASE_SALARY}. Соперник: ${DIFFS[table.diff][0]}.`);
   runGame();
 }
 /* ---------- сетевая партия ---------- */
@@ -1190,8 +1420,8 @@ function recordResult(won,reason){
   if(!canRecord())return;
   const me=meP(),foe=foeP();
   saveQueue([...loadQueue(),{
-    game:'duel',gid:MP?`${mp.code}-${gameSeed}`:`b${gameSeed}`,mode:MP?'pvp':'bot',diff:MP?null:cfg.diff,
-    draft:!!cfg.draft,goal:cfg.goal,start:cfg.start,won,reason,rounds:rounds+1,seed:gameSeed,ver:'duel-2026-09-24',
+    game:'duel',gid:MP?`${mp.code}-${gameSeed}`:`b${gameSeed}`,mode:MP?'pvp':'bot',diff:MP?null:table.diff,
+    draft:table.draft,goal:table.goal,start:table.start,won,reason,rounds:rounds+1,seed:gameSeed,ver:'duel-2026-09-24',
     // журнал событий целиком: по нему партию можно переиграть и посчитать баланс на живых игроках
     data:{me:side(me),foe:side(foe),seat:mySeat,events:evLog},
   }]);
@@ -1213,7 +1443,9 @@ async function flushResults(){
   }finally{flushing=false}
 }
 async function showStats(){
-  $('panel').innerHTML='<h2>Моя статистика</h2><p>Загружаю…</p>';$('ov').hidden=false;
+  const head=`<div class="mhead"><div><h1>Моя статистика</h1><span>по вашему Telegram ID, имя не сохраняется</span></div>
+    <button class="xbtn" id="statsBack" aria-label="Назад">${XICON}</button></div>`;
+  openPage(head+'<p class="lead">Загружаю…</p>');$('statsBack').onclick=()=>showSetup();
   let s=null;
   try{const r=await fetch(API_URL+'/stats?game=duel',{headers:{'x-init-data':TG.initData}});if(r.ok)s=await r.json()}catch(e){}
   // 1 победа, 2 победы, 5 побед
@@ -1223,12 +1455,12 @@ async function showStats(){
   const when=t=>new Date(t*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
   const why={capital:'по накоплениям',bankrupt:'банкротство',surrender:'сдача'};
   let body;
-  if(!s)body='<p>Не удалось загрузить статистику. Проверьте связь и попробуйте ещё раз.</p>';
-  else if(!s.games)body='<p>Здесь появятся ваши партии. Сыграйте первую — результат сохранится сам.</p>';
+  if(!s)body='<p class="lead">Не удалось загрузить статистику. Проверьте связь и попробуйте ещё раз.</p>';
+  else if(!s.games)body='<p class="lead">Здесь появятся ваши партии. Сыграйте первую — результат сохранится сам.</p>';
   else{
     const top=Object.entries(s.perkLevels||{}).filter(([k])=>perk(k)).sort((a,b)=>b[1]-a[1])[0];
     const st=s.streak;
-    body=`<div class="stats two">
+    body=`<div class="sect"><div class="stats">
       ${row('партий',s.games)}${row('побед',s.wins,pct(s.wins,s.games))}
       ${Object.entries(DIFFS).map(([k,[n]])=>s.byDiff[k].games?row('против «'+n+'»',`${s.byDiff[k].wins} из ${s.byDiff[k].games}`,pct(s.byDiff[k].wins,s.byDiff[k].games)):'').join('')}
       ${s.byMode.pvp.games?row('с людьми',`${s.byMode.pvp.wins} из ${s.byMode.pvp.games}`,pct(s.byMode.pvp.wins,s.byMode.pvp.games)):''}
@@ -1236,14 +1468,11 @@ async function showStats(){
       ${row('лучшая серия побед',s.bestWinStreak)}
       ${s.avgWinRounds?row('средняя победа','за '+pl(s.avgWinRounds,'круг','круга','кругов')):''}
       ${top?row('любимый перк',perk(top[0]).n):''}
-    </div>
-    <h3>Последние партии</h3>
-    <div class="stats two">${s.recent.map(r=>row(`${when(r.at)} · ${r.mode==='pvp'?'с человеком':'«'+(DIFFS[r.diff]||['бот'])[0]+'»'}<br><small style="color:var(--dim)">${pl(r.rounds,'круг','круга','кругов')}${r.reason?', '+why[r.reason]:''}</small>`,r.won?'победа':'поражение')).join('')}</div>`;
+    </div></div>
+    <div class="sect"><b class="sttl">Последние партии</b><div class="stats">${s.recent.map(r=>row(`${when(r.at)} · ${r.mode==='pvp'?'с человеком':'«'+(DIFFS[r.diff]||['бот'])[0]+'»'}<br><small style="color:var(--dim)">${pl(r.rounds,'круг','круга','кругов')}${r.reason?', '+why[r.reason]:''}</small>`,r.won?'победа':'поражение')).join('')}</div></div>`;
   }
-  $('panel').innerHTML=`<h2>Моя статистика</h2>${body}
-    <p>Статистика хранится по вашему Telegram ID, имя не сохраняется.</p>
-    <div class="acts"><button class="btn" id="statsBack">Назад</button></div>`;
-  $('statsBack').onclick=showSetup;
+  openPage(head+body+'<button class="bline" id="statsBack2">Назад</button>');
+  $('statsBack').onclick=$('statsBack2').onclick=()=>showSetup();
 }
 const mpSend=m=>{try{if(mp.ws&&mp.ws.readyState===1)mp.ws.send(JSON.stringify(m))}catch(e){}};
 function mpConnect(code){
@@ -1251,7 +1480,7 @@ function mpConnect(code){
   const prev=mp.ws;mp.ws=null;try{prev&&prev.close()}catch(e){}
   let ws;try{ws=new WebSocket(WS_URL)}catch(e){return mpFail('Не удалось открыть соединение.')}
   mp.ws=ws;net.mode='ws';net.send=ev=>mpSend({t:'intent',...ev});
-  if(!MP){$('panel').innerHTML='<h2>Подключаюсь…</h2><p>Ищу комнату на сервере.</p>';$('ov').hidden=false}
+  if(!MP)openPage('<div class="stack" style="gap:12px"><div class="logo"><i></i><i></i></div><h1>Подключаюсь…</h1><p class="lead">Ищу комнату на сервере.</p></div>');
   ws.onopen=()=>{
     mp.tries=0;
     mpSend({t:'hello',room:mp.want,uid:myUid(),name:myName(),color:cfg.color,initData:(inTG&&TG.initData)||''});
@@ -1268,9 +1497,9 @@ function mpConnect(code){
 }
 function mpFail(text){
   net.mode='local';
-  $('panel').innerHTML=`<h2>Не получилось</h2><p>${text}</p>
-    <div class="acts"><button class="btn" id="eBack">Играть с ботом</button></div>`;
-  $('ov').hidden=false;$('eBack').onclick=showSetup;
+  openPage(`<div class="stack" style="gap:12px"><h1>Не получилось</h1><p class="lead">${escHtml(text)}</p></div>
+    <button class="bgold" id="eBack">Играть с ботом</button>`);
+  $('eBack').onclick=()=>showSetup();
 }
 function mpMsg(m){
   if(m.t==='lobby'){
@@ -1305,10 +1534,11 @@ function mpRun(evs){
   /* Порог и стартовое золото приходят от хозяина: если считать их по своим настройкам,
      клиенты разойдутся на первом же ходу. */
   const o=m.opts||{};
-  if(GOALS.some(([g])=>g===o.goal))cfg.goal=o.goal;
-  if(GOLD.some(([g])=>g===o.start))cfg.start=o.start;
-  if(o.diff&&DIFFS[o.diff])cfg.diff=o.diff;
-  if(typeof o.draft==='boolean')cfg.draft=o.draft;
+  const t=tableFrom({
+    goal:GOALS.some(([g])=>g===o.goal)?o.goal:cfg.goal,
+    start:GOLD.some(([g])=>g===o.start)?o.start:cfg.start,
+    diff:o.diff&&DIFFS[o.diff]?o.diff:cfg.diff,
+    draft:typeof o.draft==='boolean'?o.draft:cfg.draft});
   /* Цвета — те, что игроки выбрали в лобби, одинаковые на обоих экранах. Если цвета нет
      (старый сервер) или он совпал с моим — соперник получает самый непохожий. */
   const sc=m.seats.slice(0,2).map(x=>x&&x.color);
@@ -1316,11 +1546,11 @@ function mpRun(evs){
   let foeC=sc[1-mySeat];
   if(!foeC||foeC===youC)foeC=foeColor(youC)[0];
   mp.cols=[youC,foeC];
-  resetTable(seats,m.seed);
+  resetTable(seats,m.seed,t);
   evLog=evs.slice();
   replaying=evLog.length>0;
   $('ov').hidden=true;
-  if(!replaying)log(`Партия началась. У каждого по ${cfg.start}. Соперник: ${seats[1-mySeat].name}.`);
+  if(!replaying)log(`Партия началась. У каждого по ${table.start}. Соперник: ${seats[1-mySeat].name}.`);
   runGame();
 }
 // цвета, занятые другими игроками комнаты: их выбрать нельзя
@@ -1330,26 +1560,21 @@ function showLobby(){
   const webLink=location.origin+location.pathname+'?room='+mp.code;
   const link=inTG?tgLink(mp.code):webLink;
   const taken=takenColors(),mine=(mp.members.find(x=>x.uid===mp.you)||{}).color;
-  const rows=mp.members.map((x,i)=>`<div class="srow"><span>${x.color?`<i style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:${x.color}"></i>`:''}${escHtml(x.name)}${x.uid===mp.host?' · хозяин':''}${x.uid===mp.you?' · вы':''}</span><b>${x.online?'в комнате':'отошёл'}</b><b></b></div>`).join('');
-  $('panel').innerHTML=`<h2>Комната ${mp.code}</h2>
-    <p>Отправьте ссылку сопернику — он сядет за этот же стол.</p>
-    <div class="setup">
-      <label class="field"><span>Ваше имя за столом</span>
-        <input id="lName" type="text" maxlength="16" value="${myName().replace(/"/g,'&quot;')}"
-          style="width:100%;background:var(--surf2);border:1.5px solid var(--line);border-radius:12px;padding:10px;color:inherit"></label>
-      <div class="field"><span>Цвет фишки — занятый соперником выбрать нельзя</span><div class="swatches">${COLORS.map(([c,n])=>{
+  const rows=mp.members.map(x=>`<div class="who2"><span class="sq" style="background:${x.color||'var(--line)'}"></span>
+    <span class="ell">${escHtml(x.name)}</span><small>${[x.uid===mp.host?'хозяин':'',x.uid===mp.you?'вы':'',x.online?'':'отошёл'].filter(Boolean).join(' · ')}</small></div>`).join('');
+  openPage(`<div class="mhead"><div><h1>Комната ${mp.code}</h1><span>Отправьте ссылку сопернику — он сядет за этот же стол.</span></div></div>
+    <div class="sect">
+      <div class="fld"><span>Ваше имя за столом</span><input class="inp" id="lName" type="text" maxlength="16" value="${escHtml(myName())}"></div>
+      <div class="fld"><span>Цвет фишки — занятый соперником выбрать нельзя</span><div class="sws">${COLORS.map(([c,n])=>{
         const busy=taken.includes(c),who=busy?(mp.members.find(x=>x.color===c)||{}).name:'';
-        return `<button class="sw${mine===c?' on':''}" data-lcolor="${c}" style="background-color:${c}" ${busy?'disabled':''} title="${busy?`${n}: занят, ${escHtml(who)}`:n}" aria-label="${n}${busy?', занят':''}"></button>`}).join('')}</div></div>
+        return `<button class="sw" data-lcolor="${c}" style="background-color:${c}" aria-pressed="${mine===c}" ${busy?'disabled':''} title="${busy?`${n}: занят, ${escHtml(who)}`:n}" aria-label="${n}${busy?', занят':''}"></button>`}).join('')}</div></div>
     </div>
-    <div class="acts">${inTG?'<button class="btn" id="lShare">Позвать друга</button>':''}
-      <button class="btn${inTG?' ghost':''}" id="lCopy">Скопировать ссылку</button>
-      ${inTG?'<button class="btn ghost" id="lWeb">Для браузера</button>':''}</div>
-    <div class="stats">${rows}</div>
-    <div class="acts">
-      ${isHost?`<button class="btn" id="lGo" ${mp.members.length<2?'disabled':''}>Начать партию</button>`:'<span>Ждём хозяина комнаты.</span>'}
-      <button class="btn ghost" id="lExit">Выйти</button></div>
-    ${isHost&&mp.members.length<2?'<p>Нужен второй игрок — пришлите ему ссылку.</p>':''}`;
-  $('ov').hidden=false;
+    <div class="stack">${inTG?'<button class="bgold" id="lShare">Позвать друга</button>':''}
+      <div class="${inTG?'two':'stack'}"><button class="bline" id="lCopy">Скопировать ссылку</button>${inTG?'<button class="bline" id="lWeb">Для браузера</button>':''}</div></div>
+    <div class="sect"><b class="sttl">За столом</b><div class="stack" style="gap:8px">${rows}</div></div>
+    <div class="stack">${isHost?`<button class="bmain" id="lGo" ${mp.members.length<2?'disabled':''}>Начать партию</button>`:'<p class="note2">Ждём хозяина комнаты.</p>'}
+      ${isHost&&mp.members.length<2?'<p class="note2">Нужен второй игрок — пришлите ему ссылку.</p>':''}
+      <button class="bline" id="lExit">Выйти</button></div>`,'',!!$('lName'));
   $('lName').onchange=e=>setMyName(e.target.value);
   $('panel').querySelectorAll('[data-lcolor]').forEach(b=>b.onclick=()=>{
     if(b.disabled)return;
@@ -1374,7 +1599,6 @@ function showLobby(){
 }
 
 initTG();
-if(inTG)$('hapBtn').hidden=false;
 applyColor();
 flushResults();
 /* Приглашение приходит ссылкой ?room=CODE или диплинком startapp=CODE и ведёт прямо в комнату, мимо настроек. */
