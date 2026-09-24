@@ -73,7 +73,7 @@ b{font-weight:700}
 .dbadge[hidden]{display:none}
 .pos{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
 .neg{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
-.who .sub{font-size:12px;color:var(--dim)}
+.who .sub{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .who.tired .sub{color:var(--gold)}
 .bar{height:6px;margin-top:5px;border-radius:999px;background:var(--surf2);overflow:hidden}
 .bar i{display:block;height:100%;border-radius:999px;background:var(--c);transition:width .3s}
@@ -120,14 +120,19 @@ b{font-weight:700}
 @keyframes spin{to{transform:rotateY(360deg)}}
 
 /* карточка события после броска */
-.event{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:16px;background:var(--surf);border:2px solid var(--line)}
+.event{display:flex;flex-direction:column;gap:6px;height:78px;overflow:hidden;padding:12px 14px;border-radius:16px;
+  background:var(--surf);border:2px solid var(--line);transition:opacity .2s}
 .event[hidden]{display:none}
+.event.stale{opacity:.5}
 .event.good{border-color:color-mix(in srgb,var(--good) 50%,transparent)}
 .event.bad{border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
-.event .pre{font-size:12px;color:var(--dim)}
-.event .ttl{font-size:14px;font-weight:600}
-.event .chips{display:flex;flex-wrap:wrap;gap:8px;font-size:13px}
-.echip{max-width:100%;padding:3px 9px;border-radius:8px;font-weight:700}
+.event .ttl{display:flex;min-width:0;font-size:14px;font-weight:600;white-space:nowrap}
+/* обрезается имя, а не суть: «Константи… в гостях: рента 50» */
+.event .enm{flex:0 100 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.event .rest{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.event .ask{font-size:14px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.event .chips{display:flex;flex-wrap:nowrap;gap:8px;font-size:13px;min-width:0;overflow:hidden}
+.echip{flex:0 1 auto;min-width:0;padding:3px 9px;border-radius:8px;font-weight:700}
 .echip.zero{background:var(--surf2);color:var(--dim);font-weight:600}
 
 /* жетоны под полем */
@@ -137,7 +142,7 @@ b{font-weight:700}
 .tk .tn{display:flex;align-items:center;gap:4px;width:100%;font-size:13.5px;font-weight:600;white-space:nowrap;letter-spacing:-.01em}
 .tk .cnt{margin-left:auto;display:grid;place-items:center;min-width:22px;height:22px;border-radius:6px;background:var(--surf2);
   font-family:var(--num);font-size:11.5px;flex:none}
-.tk .th{font-size:11.5px;color:var(--dim)}
+.tk .th{font-size:11.5px;color:var(--dim);min-height:2.8em;line-height:1.4}
 .tk.can{border-color:var(--you)}
 .tk.can .th{display:flex;align-items:center;gap:5px;font-weight:700;color:var(--text)}
 .tk.can .th::before{content:'';width:7px;height:7px;border-radius:2px;background:var(--you)}
@@ -182,9 +187,11 @@ b{font-weight:700}
 .pk .now{font-size:12px;color:var(--dim)}
 .pk .next{font-size:12px;font-weight:600}
 .pk .why{font-size:12px;color:var(--dim)}
-.tog{align-self:flex-start;margin-top:4px;padding:4px 10px;border-radius:8px;border:1.5px solid var(--line);font-size:11.5px;font-weight:600;color:var(--dim)}
-.tog.on{color:var(--good);border-color:color-mix(in srgb,var(--good) 55%,transparent);background:color-mix(in srgb,var(--good) 10%,transparent)}
-.tog:disabled{opacity:.45;cursor:default}
+.psw{margin-left:auto;flex:none;display:flex;width:34px;height:20px;padding:2px;border-radius:999px;background:var(--line);transition:background .15s}
+.psw::after{content:'';width:16px;height:16px;border-radius:50%;background:#FFFFFF}
+.psw[aria-checked="true"]{background:var(--you)}
+.psw[aria-checked="true"]::after{margin-left:auto}
+.psw:disabled{opacity:.45;cursor:default}
 .up{flex:none;display:flex;flex-direction:column;align-items:center;width:92px;padding:7px 10px;border-radius:12px;
   background:var(--you);color:var(--youInk);box-shadow:0 3px 0 var(--ink)}
 .up span{font-size:10.5px;font-weight:600;white-space:nowrap}
@@ -784,8 +791,8 @@ function render(){
     hud.classList.toggle('acting',turn===seat&&!over);
     const n=p.streak||0;
     $('sub'+i).textContent=atHome(p)
-      ?(n>=2?'дома 2 хода подряд · следующий ход — переход':`дома · зарплата ${salary(p)}`)
-      :(n>=2?'в гостях 2 хода подряд · следующий ход — домой':'в гостях · платит ренту');
+      ?(n>=2?'следующий ход — переход':`дома · зарплата ${salary(p)}`)
+      :(n>=2?'следующий ход — домой':'в гостях · платит ренту');
     hud.classList.toggle('tired',n>=2);
     $('bar'+i).hidden=!g;
     $('cap'+i).style.width=g?(Math.min(1,capital(p)/g)*100).toFixed(0)+'%':'0%';
@@ -816,12 +823,13 @@ function render(){
   [0,1].forEach(v=>{$('chip'+v).className='chip '+(v?'r':'l')+(hit===v?' hit-'+lastFlip.c:'')});
   // карточка события: вопрос игроку важнее итога броска
   const ev=$('event');
-  if(askText){ev.hidden=false;ev.className='event';ev.innerHTML=`<span class="ttl">${escHtml(askText)}</span>`}
+  ev.hidden=false;
+  if(askText){ev.className='event';ev.innerHTML=`<span class="ask">${escHtml(askText)}</span>`}
   else if(evCard){
-    ev.hidden=false;ev.className='event'+(evCard.tone?' '+evCard.tone:'');
-    ev.innerHTML=`${evCard.pre?`<span class="pre">${escHtml(evCard.pre)}</span>`:''}<span class="ttl">${escHtml(evCard.title)}</span>`
-      +(evCard.chips.length?`<div class="chips">${evCard.chips.map(c=>`<span class="echip ell ${c.k}">${escHtml(c.t)}</span>`).join('')}</div>`:'');
-  } else ev.hidden=true;
+    ev.className='event'+(evCard.tone?' '+evCard.tone:'')+(evCard.stale?' stale':'');
+    ev.innerHTML=`<span class="ttl">${evCard.who?`<span class="enm">${escHtml(evCard.who)}</span>`:''}<span class="rest">${evCard.who?'&nbsp;':''}${escHtml(evCard.text)}</span></span>`
+      +`<div class="chips">${evCard.chips.map(c=>`<span class="echip ell ${c.k}">${escHtml(c.t)}</span>`).join('')}</div>`;
+  } else {ev.className='event';ev.innerHTML=''}
   // верхняя строка
   $('round').textContent=rounds+1;
   const left=INFL_EVERY-(rounds%INFL_EVERY);
@@ -868,12 +876,13 @@ function render(){
     const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`:c===null?'максимум':'';
     const busyWhy=locked||why?'':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
     const ready=unlocked&&c!==null&&!why&&!busyWhy&&!locked;
-    const now=off?`выключен, сейчас: ${pk.fmt(0)}. Включите — ${pk.fmt(l)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d;
-    const next=unlocked&&c!==null?(off?`уровень ${l+1}: ${pk.fmt(l+1)}, когда включите`:`станет: ${pk.fmt(l+1)}`):'';
+    // выключенный перк — те же две строки, что и включённый: что капает сейчас и что будет после включения
+    const now=off?`выключен: ${pk.fmt(0)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d;
+    const next=off?`включите — ${pk.fmt(l)}`:unlocked&&c!==null?`станет: ${pk.fmt(l+1)}`:'';
     return `<div class="pk${ready?' ready':''}${off?' paused':''}"><div class="pkrow">${ring(l,'a')}
-      <div class="pkbody"><span class="pname">${pk.n}<button class="q" data-info="${pk.k}" aria-label="Как работает ${pk.n}">?</button></span>
-        <span class="now">${now}</span>${next?`<span class="next">${next}</span>`:''}${why?`<span class="why">${why}</span>`:''}
-        ${l>0?`<button class="tog${off?' on':''}" data-tog="${pk.k}" ${locked?'disabled':''}>${off?'включить':'выключить'}</button>`:''}</div>
+      <div class="pkbody"><span class="pname">${pk.n}<button class="q" data-info="${pk.k}" aria-label="Как работает ${pk.n}">?</button>
+          ${l>0?`<button class="psw" role="switch" data-tog="${pk.k}" aria-checked="${!off}" aria-label="${pk.n}: ${off?'выключен, включить':'работает, выключить'}" ${locked?'disabled':''}></button>`:''}</span>
+        <span class="now">${now}</span>${next?`<span class="next">${next}</span>`:''}${why?`<span class="why">${why}</span>`:''}</div>
       ${c!==null&&unlocked?`<button class="up" data-k="${pk.k}" ${ready?'':'disabled'}><span>${busyWhy||'поднять'}</span><b>${c}</b></button>`:''}</div>
       ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}</div>`;
   }).join('')+`<div class="shophead"><b>Жетоны монетки</b><span>тоже тратят действие хода</span></div>`
@@ -946,7 +955,7 @@ async function coverDebt(p,need){
   return true;
 }
 async function flip(p){
-  const g=gen;busy=true;acts=[];note='';lastFlip=null;evCard=null;render();
+  const g=gen;busy=true;acts=[];note='';lastFlip=null;if(evCard){evCard.stale=true;evCard.deltas=null}render();
   const alive=()=>g===gen&&!over;
   let v;
   // значение просим сразу, анимация крутится параллельно — сетевая задержка прячется под ней
@@ -955,7 +964,7 @@ async function flip(p){
     return await pr;
   };
   let pre='';
-  if(p.force){v=p.force==='stay'?0:1;coin=String(v);msg=`${p.name}: жетон вместо броска`;pre=`жетон «${p.force==='stay'?'Якорь':'Рывок'}» вместо броска`;render();await sleep(500)}
+  if(p.force){v=p.force==='stay'?0:1;coin=String(v);msg=`${p.name}: жетон вместо броска`;pre=`жетон «${p.force==='stay'?'Якорь':'Рывок'}»`;render();await sleep(500)}
   else{
     const pr=evCoin(p.id);pr.catch(()=>{});
     v=await spin(pr);coin=String(v);render();
@@ -982,7 +991,7 @@ async function flip(p){
   const beforeRect=rectOf(p);
   const wasHome=atHome(p);
   if(v===1)sfx.go();else sfx.stay();
-  if(forced)pre='третий ход на месте — переход принудительно';
+  if(forced)pre='третий ход на месте — переход';
   lastFlip={c:cls(p)};
   if(v===1){p.pos=1-p.pos;note='переход';
     msg=forced?`${p.name}: третий ход на месте — переход принудительно`:`${p.name}: выпала 1, шаг на соседнюю клетку`}
@@ -993,7 +1002,7 @@ async function flip(p){
     let gain=salary(p);let extra='';
     if(!wasHome&&val(p,'route')){gain+=val(p,'route');extra=`, Логистика +${val(p,'route')}`;p.st.route+=val(p,'route')}
     p.money+=gain;p.st.wage+=salary(p);p.st.home++;msg=`${p.name}: дома, +${gain} (зарплата ${salary(p)}${extra})`;log(msg);
-    evCard={pre,title:`${p.name} дома: зарплата ${salary(p)}${extra}`,chips:[{t:`${p.name} +${gain}`,k:'pos'}],
+    evCard={who:p.name,text:`дома: зарплата ${salary(p)}${extra}`,chips:[{t:`${p.name} +${gain}`,k:'pos'},...(pre?[{t:pre,k:'zero'}]:[])],
       deltas:{[p.id]:gain},tone:p===meP()?'good':''};
     if(p===meP())sfx.gain();
   } else {
@@ -1019,8 +1028,9 @@ async function flip(p){
         {t:`${foe.name} ${sgn(keep-take)}`,k:keep-take<0?'neg':keep-take>0?'pos':'zero'}];
       if(take)chips.push({t:`Рэкет +${take}`,k:'zero'});
       if(r-keep>0)chips.push({t:`сгорело ${r-keep}`,k:'zero'});
+      if(pre)chips.push({t:pre,k:'zero'});
       const mine=p===meP()?take-r:foe===meP()?keep-take:0;
-      evCard={pre,title:!r&&!take?`${p.name} в гостях: ренты нет`:`${p.name} в гостях: рента ${r}, половина сгорает`,chips,
+      evCard={who:p.name,text:!r&&!take?'в гостях: ренты нет':`в гостях: рента ${r}, половина сгорает`,chips,
         deltas:{[p.id]:take-r,[foe.id]:keep-take},tone:mine<0?'bad':mine>0?'good':''}}
     if(r||take){if(p===meP())sfx.pay();else if(foe===meP())sfx.gain()}
     if(foe.money<0&&!await coverDebt(foe,0))return end(p);
@@ -1131,6 +1141,8 @@ async function draftPhase(){
   }
   draftUI=null;$('ov').hidden=true;
   P[0].ban=bans[0];P[1].ban=bans[1];
+  evCard={who:'',text:'Драфт закрыт',tone:'',chips:[0,1].map(i=>{const q=P[i];
+    return {t:`${q===meP()?'Вы':q.name}: без «${perk(bans[i]).n}»`,k:q===meP()?'neg':'pos'}})};
   log(`Драфт: ${P[0].name} — без перка «${perk(bans[0]).n}», ${P[1].name} — без перка «${perk(bans[1]).n}»`);
   msg=`Драфт закрыт. ${P[0].name}: нет «${perk(bans[0]).n}». ${P[1].name}: нет «${perk(bans[1]).n}».`;
   acts=[];render();sfx.reveal();await sleep(1100);
@@ -1346,7 +1358,8 @@ function resetTable(seats,seed,t){
   const plans=[['rent','office','shield','raid','route'],['rent','shield','office','route','raid'],['rent','office','raid','shield','route']];
   botPlan=plans[rnd()*plans.length|0];
   turn=0;over=false;busy=false;rounds=0;logs=[];coin='?';shown.length=0;idleCtx=null;note='';
-  lastFlip=null;evCard=null;askText='';draftUI=null;
+  lastFlip=null;askText='';draftUI=null;
+  evCard={who:'',text:'Партия началась',chips:[{t:`у каждого по ${table.start}`,k:'zero'},{t:table.goal?`победа при ${table.goal}`:'без победы по накоплениям',k:'zero'}],tone:''};
   $('ov').hidden=true;
 }
 function reset(){
