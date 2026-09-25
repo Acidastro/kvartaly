@@ -13,24 +13,26 @@
    (data-theme) или система, если открыто в браузере. */
 :root{
   --bg:#111319;--surf:#1A1D26;--surf2:#232733;--line:#363C4D;--text:#F3F0E8;--dim:#A5ABBB;
-  --ink:#07080C;--gold:#FFC53D;--goldEdge:#B8861A;--goldInk:#1A1405;--good:#3DDBA8;--bad:#FF6A83;
+  --ink:#07080C;--gold:#FFC53D;--goldEdge:#B8861A;--goldInk:#1A1405;--ctaEdge:transparent;--good:#3DDBA8;--bad:#FF6A83;
   --dot:rgba(255,255,255,.05);
   --you:#7B61FF;--foe:#B5E853;--youInk:#FFFFFF;--foeInk:#15131C;
+  /* производные цвета фишек считает applyColor(): fill — фон под текстом, edge — рамки и полоски */
+  --youFill:var(--you);--foeFill:var(--foe);--youEdge:var(--you);--foeEdge:var(--foe);
   --num:Unbounded,system-ui,sans-serif;
 }
 @media (prefers-color-scheme:light){
   :root:not([data-theme="dark"]){--bg:#F1ECE3;--surf:#FFFFFF;--surf2:#F6F2EA;--line:#DDD5C7;--text:#1C1A16;--dim:#646054;
-    --ink:#D3CABB;--goldEdge:#C9901C;--good:#0B7F5F;--bad:#C62D4E;--dot:rgba(70,50,20,.08)}
+    --ink:#D3CABB;--goldEdge:#C9901C;--ctaEdge:#C9901C;--good:#066146;--bad:#B0213F;--dot:rgba(70,50,20,.08)}
 }
 :root[data-theme="light"]{--bg:#F1ECE3;--surf:#FFFFFF;--surf2:#F6F2EA;--line:#DDD5C7;--text:#1C1A16;--dim:#646054;
-  --ink:#D3CABB;--goldEdge:#C9901C;--good:#0B7F5F;--bad:#C62D4E;--dot:rgba(70,50,20,.08)}
+  --ink:#D3CABB;--goldEdge:#C9901C;--ctaEdge:#C9901C;--good:#066146;--bad:#B0213F;--dot:rgba(70,50,20,.08)}
 *{box-sizing:border-box}
 html,body{height:var(--app-h,100%)}
 body{margin:0;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.6px);
   background-size:18px 18px;color:var(--text);font-family:Onest,system-ui,sans-serif;font-size:15px;line-height:1.4;
   -webkit-font-smoothing:antialiased;overflow:hidden;padding:env(safe-area-inset-top,0) 0 0}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:inherit}
-button:focus-visible{outline:2px solid var(--you);outline-offset:2px}
+button:focus-visible{outline:2px solid var(--youEdge);outline-offset:2px}
 b{font-weight:700}
 /* имя игрока может быть длинным — везде обрезаем многоточием */
 .ell{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -39,7 +41,7 @@ b{font-weight:700}
    не сжимаются, а лист внизу растёт вместе с содержимым. */
 .app{height:100%;overflow-y:auto;overscroll-behavior:contain}
 .col{position:relative;max-width:520px;min-height:100%;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);
-  grid-template-rows:repeat(5,auto) 1fr;gap:12px;padding:8px 16px 0}
+  grid-template-rows:repeat(5,auto) minmax(0,1fr);gap:8px;padding:8px 16px 0}
 
 /* верхняя строка */
 .top{display:flex;align-items:center;gap:6px;height:44px}
@@ -47,11 +49,10 @@ b{font-weight:700}
   font-size:12.5px;color:var(--dim)}
 .tb b{font-family:var(--num);font-size:13px;color:var(--text)}
 .infl{flex-grow:1;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;line-height:1.15}
-.infl .l1{font-weight:600;color:var(--text)}
-.infl .l2{font-size:11px;color:var(--dim)}
-.infl.hot{background:color-mix(in srgb,var(--bad) 14%,var(--surf))}
-.infl.hot .l1,.infl.hot .l1 b{color:var(--bad)}
-.spd{justify-content:center;min-width:44px;padding:0 10px;font-family:var(--num);font-size:13px;font-weight:700}
+.infl .l1{color:var(--dim)}
+.infl.hot .l1 b{color:var(--bad)}
+.infl .l2{max-width:100%;font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spd{justify-content:center;min-width:44px;padding:0 10px;font-family:var(--num);font-size:13px;font-weight:700;color:var(--dim)}
 .ico{justify-content:center;width:44px;padding:0;color:var(--text)}
 .note{position:absolute;z-index:5;top:60px;left:16px;right:16px;margin:0;padding:12px 14px;border-radius:16px;
   background:var(--surf);border:2px solid var(--line);box-shadow:0 12px 32px -8px rgba(0,0,0,.5);font-size:13px;color:var(--dim);line-height:1.45}
@@ -59,17 +60,19 @@ b{font-weight:700}
 
 /* карточки игроков */
 .hud{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.who{min-width:0;display:flex;flex-direction:column;gap:3px;padding:11px 13px 12px;background:var(--surf);
+.who{position:relative;min-width:0;display:flex;flex-direction:column;gap:3px;padding:11px 13px 12px;background:var(--surf);
   border:2px solid transparent;border-radius:18px;box-shadow:0 4px 0 var(--ink);transition:border-color .2s}
-.who.a{--c:var(--you);--ci:var(--youInk)}.who.b{--c:var(--foe);--ci:var(--foeInk)}
+.who.a{--c:var(--youEdge);--cf:var(--youFill);--ci:var(--youInk)}.who.b{--c:var(--foeEdge);--cf:var(--foeFill);--ci:var(--foeInk)}
 .who.acting{border-color:var(--c)}
 .whead{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);min-height:22px}
 .sq{flex:none;width:10px;height:10px;border-radius:3px;background:var(--c)}
-.turn{flex:none;margin-left:auto;padding:2px 8px;border-radius:6px;background:var(--c);color:var(--ci);font-size:11px;font-weight:700}
+/* тег «ходит» висит на верхней рамке карточки */
+.turn{position:absolute;top:-10px;right:12px;padding:2px 8px;border-radius:6px;background:var(--cf);color:var(--ci);font-size:12px;font-weight:700;line-height:1.3}
 .who:not(.acting) .turn{display:none}
-.vrow{display:flex;align-items:center;gap:8px;min-height:36px;min-width:0}
-.val{font-family:var(--num);font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
-.dbadge{flex:none;padding:2px 9px;border-radius:8px;font-family:var(--num);font-size:15px;font-weight:700}
+/* счёт и плашка не переносятся; если места мало, плашка уходит строкой ниже */
+.vrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-height:36px;min-width:0}
+.val{font-family:var(--num);font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dbadge{flex:none;padding:2px 9px;border-radius:8px;font-family:var(--num);font-size:15px;font-weight:700;white-space:nowrap}
 .dbadge[hidden]{display:none}
 .pos{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
 .neg{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
@@ -77,7 +80,7 @@ b{font-weight:700}
 .who.tired .sub{color:var(--gold)}
 .bar{height:6px;margin-top:5px;border-radius:999px;background:var(--surf2);overflow:hidden}
 .bar i{display:block;height:100%;border-radius:999px;background:var(--c);transition:width .3s}
-.capv{font-size:11px;color:var(--dim)}
+.capv{font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* поле */
 .board{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:20px;background:var(--surf)}
@@ -85,16 +88,16 @@ b{font-weight:700}
 .cell{position:relative;min-width:0;height:150px;display:flex;flex-direction:column;align-items:center;
   justify-content:space-between;padding:10px 10px 9px;border:3px solid var(--c);border-radius:14px;
   background:color-mix(in srgb,var(--c) 13%,var(--surf2))}
-.cell.a{--c:var(--you)}.cell.b{--c:var(--foe)}
-.cttl{align-self:stretch;font-size:11.5px;font-weight:600;color:var(--dim)}
+.cell{border-color:var(--ce)}
+.cell.a{--c:var(--you);--ce:var(--youEdge)}.cell.b{--c:var(--foe);--ce:var(--foeEdge)}
+.cttl{align-self:stretch;font-size:12px;font-weight:600;color:var(--dim)}
 .pawns{display:flex;flex-direction:column;align-items:center;gap:8px;max-width:100%}
 .pawn{display:block;min-width:58px;max-width:100%;height:32px;line-height:32px;text-align:center;padding:0 12px;
   border-radius:10px;font-weight:700;font-size:14px;box-shadow:0 3px 0 var(--ink)}
-.pawn.a{background:var(--you);color:var(--youInk)}.pawn.b{background:var(--foe);color:var(--foeInk)}
-.pawn.guest{outline:2px dashed var(--text);outline-offset:3px}
-.rent{display:flex;align-items:baseline;gap:5px;font-size:11.5px;color:var(--dim);white-space:nowrap}
+.pawn.a{background:var(--youFill);color:var(--youInk)}.pawn.b{background:var(--foeFill);color:var(--foeInk)}
+.pawn.guest{opacity:.75}
+.rent{display:flex;align-items:baseline;gap:5px;font-size:12px;color:var(--dim);white-space:nowrap}
 .rent b{font-family:var(--num);font-size:17px;color:var(--text)}
-.rent u{text-decoration:none;font-size:11px;font-weight:700;color:var(--bad)}
 .rent.off{font-weight:600;color:var(--good)}
 .rent.bump b{display:inline-block;animation:bump 1.1s cubic-bezier(.25,1.2,.4,1)}
 @keyframes bump{0%{transform:scale(1)}18%{transform:scale(1.45);color:var(--bad)}45%{transform:scale(1);color:var(--bad)}100%{transform:scale(1)}}
@@ -110,8 +113,8 @@ b{font-weight:700}
 .chip b{font-family:var(--num);color:var(--text)}
 .chip.l{justify-self:end}.chip.r{justify-self:start}
 /* чип исхода заливается цветом того, кто бросал; второй остаётся серым */
-.chip.hit-a{background:var(--you);color:var(--youInk);font-weight:700}
-.chip.hit-b{background:var(--foe);color:var(--foeInk);font-weight:700}
+.chip.hit-a{background:var(--youFill);color:var(--youInk);font-weight:700}
+.chip.hit-b{background:var(--foeFill);color:var(--foeInk);font-weight:700}
 .chip.hit-a b,.chip.hit-b b{color:inherit}
 /* до броска: вторая строка — цена исхода для денег игрока */
 .chip.cost{display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 12px 6px;border-radius:10px;line-height:1.25}
@@ -119,25 +122,28 @@ b{font-weight:700}
 .chip .cv.g{color:var(--good)}.chip .cv.b{color:var(--bad)}.chip .cv.z{color:var(--dim)}
 .coin{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:var(--gold);
   box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 4px 0 var(--goldEdge);
-  font-family:var(--num);font-size:24px;font-weight:800;color:#2B1F00}
+  font-family:var(--num);font-size:24px;font-weight:800;color:#2B1F00;justify-self:center}
 .coin.flip{animation:spin .4s linear infinite}
 @keyframes spin{to{transform:rotateY(360deg)}}
 
 /* жетоны под полем: название и счётчик, без подписей */
-.toks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+/* перед жетонами и перед листом отступ больше, чем между остальными блоками */
+.toks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}
 .tk{display:flex;align-items:center;justify-content:space-between;gap:6px;height:44px;padding:0 8px 0 12px;border-radius:12px;
-  background:var(--surf);border:2px solid var(--line);font-size:13.5px;font-weight:600;min-width:0;white-space:nowrap;letter-spacing:-.01em}
+  background:var(--surf);border:2px solid transparent;font-size:13.5px;font-weight:600;min-width:0;white-space:nowrap;letter-spacing:-.01em}
 .tk .cnt{flex:none;display:grid;place-items:center;min-width:22px;height:22px;border-radius:6px;background:var(--surf2);
-  font-family:var(--num);font-size:11.5px}
-.tk.can{border-color:var(--you)}
+  font-family:var(--num);font-size:12px}
+.tk.can{border-color:var(--youEdge)}
 .tk:disabled{cursor:default}
-.tk.none{opacity:.5}
+/* жетонов нет — пунктир и «+»: нажатие ведёт к покупке в листе ниже */
+.tk.none{border:2px dashed var(--line);color:var(--dim)}
+.tk.none .cnt{font-size:13px;color:var(--dim)}
 
 /* главная кнопка / статус хода / ответы на вопрос — одна высота, чтобы раскладка не прыгала */
 .action{display:flex;flex-direction:column;gap:8px}
 .action .row{display:flex;gap:8px}
 .main{display:flex;align-items:center;justify-content:center;height:56px;border-radius:16px;background:var(--gold);color:var(--goldInk);
-  font-size:17px;font-weight:700;text-align:center;box-shadow:0 8px 24px -10px rgba(255,197,61,.55);width:100%}
+  font-size:17px;font-weight:700;text-align:center;box-shadow:inset 0 0 0 1.5px var(--ctaEdge),0 8px 24px -10px rgba(255,197,61,.55);width:100%}
 .main:disabled{opacity:.55;cursor:default}
 .main.alt{background:var(--surf);color:var(--text);border:2px solid var(--line);box-shadow:none;font-size:15px}
 .row .main{flex:1;min-width:0}
@@ -146,48 +152,60 @@ b{font-weight:700}
   background:color-mix(in srgb,var(--c) 12%,var(--surf));font-size:15px;font-weight:600}
 .statusline.a{--c:var(--you)}.statusline.b{--c:var(--foe)}
 .statusline .sq{width:12px;height:12px}
+.statusline.a .sq{background:var(--youEdge)}.statusline.b .sq{background:var(--foeEdge)}
 
 /* нижний лист */
-.sheet{flex:1 0 auto;display:flex;flex-direction:column;gap:10px;margin:0 -16px;padding:10px 12px 20px;
+.sheet{min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:10px;margin:8px -16px 0;padding:10px 12px 20px;
   border-radius:24px 24px 0 0;background:var(--surf);box-shadow:0 -1px 0 var(--line)}
 .grip{align-self:center;width:40px;height:4px;border-radius:999px;background:var(--line)}
 .tabs{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--surf2)}
-.tab{flex-grow:1;height:38px;border-radius:10px;font-size:13.5px;font-weight:500;color:var(--dim);text-align:center}
+.tab{flex-grow:1;height:44px;border-radius:10px;font-size:13.5px;font-weight:500;color:var(--dim);text-align:center}
 .tab[aria-selected="true"]{background:var(--surf);font-weight:600;color:var(--text)}
 .pane[hidden]{display:none}
 .list{display:flex;flex-direction:column;gap:10px}
 
 /* перки */
-.pk{display:flex;flex-direction:column;padding:10px 12px;border-radius:16px;background:var(--surf2);border:2px solid var(--line)}
-.pk.ready{border-color:color-mix(in srgb,var(--you) 45%,transparent);cursor:pointer;transition:transform .12s}
+.pk{display:flex;flex-direction:column;padding:10px 12px;border-radius:16px;background:var(--surf2);border:2px solid transparent}
+.pk.ready{border-color:var(--youEdge);cursor:pointer;transition:transform .12s}
 .pk.ready:active{transform:scale(.985)}
 .pk.paused{border-style:dashed}
 .pk.paused .ring,.pk.paused .pname{opacity:.55}
-.pkrow{display:flex;align-items:center;gap:12px}
+.pkrow{display:flex;align-items:center;gap:8px}
 .ring{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:conic-gradient(var(--c) var(--p),var(--line) 0)}
-.ring.a{--c:var(--you)}.ring.b{--c:var(--foe)}
+.ring.a{--c:var(--youEdge)}.ring.b{--c:var(--foeEdge)}
 .ring b{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--surf2);font-family:var(--num);font-size:14px}
+.ring b.x{font-size:13px}
 .pkbody{flex-grow:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .pname{display:flex;align-items:center;gap:6px;font-weight:600;font-size:15px}
-.q{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--surf);color:var(--dim);font-size:11px;font-weight:700;flex:none}
-.pk .now{font-size:12px;color:var(--dim)}
-.pk .next{font-size:12px;font-weight:600}
-.pk .why{font-size:12px;color:var(--dim)}
-.psw{margin-left:auto;flex:none;display:flex;width:34px;height:20px;padding:2px;border-radius:999px;background:var(--line);transition:background .15s}
-.psw::after{content:'';width:16px;height:16px;border-radius:50%;background:#FFFFFF}
-.psw[aria-checked="true"]{background:var(--you)}
-.psw[aria-checked="true"]::after{margin-left:auto}
-.psw:disabled{opacity:.45;cursor:default}
-.up{flex:none;display:flex;flex-direction:column;align-items:center;width:92px;padding:7px 10px;border-radius:12px;
-  background:var(--you);color:var(--youInk);box-shadow:0 3px 0 var(--ink)}
-.up span{font-size:10.5px;font-weight:600;white-space:nowrap}
+/* «?» — кружок 22 px, зона нажатия 44×44 */
+.q{flex:none;display:grid;place-items:center;width:44px;height:44px;margin:-11px -11px -11px -8px}
+.q i{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--surf);color:var(--dim);font-size:12px;font-weight:700;font-style:normal}
+/* больше трёх строк в карточке не бывает: название, «сейчас», «станет» — каждая в одну строку */
+.pk .now,.pk .next,.pk .why{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk .now{color:var(--dim)}
+.pk .next{font-weight:600}
+.pk .why{color:var(--dim)}
+/* переключатель по центру карточки, зона нажатия 44×44 */
+.psw{flex:none;align-self:center;display:grid;place-items:center;width:44px;height:44px;margin:-10px -2px}
+.psw i{display:flex;width:40px;height:24px;padding:3px;border-radius:999px;background:var(--line);transition:background .15s}
+.psw i::after{content:'';width:18px;height:18px;border-radius:50%;background:#FFFFFF}
+.psw[aria-checked="true"] i{background:var(--youEdge)}
+.psw[aria-checked="true"] i::after{margin-left:auto}
+.psw:disabled{cursor:default}
+/* цена без заливки: серое «поднять» и число; если нельзя — число серое, под ним причина */
+.up{flex:none;display:flex;flex-direction:column;align-items:center;min-width:60px;padding:7px 4px;color:var(--text)}
+.up span{font-size:10.5px;font-weight:600;color:var(--dim);white-space:nowrap}
 .up b{font-family:var(--num);font-size:16px}
-.up:disabled{background:var(--surf);color:var(--dim);box-shadow:none;cursor:default}
+.up.no{min-width:66px}
+.up.no b{color:var(--dim)}
+.up.no span{order:1;font-size:12px}
+.up.no span.short{color:var(--bad)}
+.up.max{font-size:12px;font-weight:600;color:var(--dim);text-align:center;line-height:1.4}
 .howto{margin-top:6px;padding-top:7px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);line-height:1.45}
 .pk.banned{flex-direction:row;align-items:center;gap:12px;background:color-mix(in srgb,var(--bad) 10%,var(--surf2));border-color:var(--bad)}
 .lock{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:50%;background:color-mix(in srgb,var(--bad) 20%,transparent);color:var(--bad)}
 .pk.banned .pname{color:var(--bad);text-decoration:line-through;text-decoration-thickness:2px}
-.pk.banned .why{color:var(--bad)}
+.pk.banned .why{color:var(--bad);white-space:normal}
 .shophead{display:flex;align-items:baseline;gap:8px;padding:10px 4px 0}
 .shophead b{font-family:var(--num);font-size:15px}
 .shophead span{font-size:12px;color:var(--dim)}
@@ -195,7 +213,9 @@ b{font-weight:700}
 .tkshop .num{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--surf);
   font-family:var(--num);font-size:15px;font-weight:700}
 .tkshop .d{font-size:12px;color:var(--dim)}
-.buy{flex:none;display:flex;flex-direction:column;align-items:center;width:92px;padding:7px 10px;border-radius:12px;
+.shophead.flash{animation:flash 1.2s}
+@keyframes flash{0%,60%{color:var(--youEdge)}}
+.buy{flex:none;display:flex;flex-direction:column;align-items:center;min-width:66px;padding:7px 10px;border-radius:12px;
   background:var(--surf);border:2px solid var(--line)}
 .buy span{font-size:10.5px;font-weight:600;color:var(--dim);white-space:nowrap}
 .buy b{font-family:var(--num);font-size:16px}
@@ -220,7 +240,7 @@ b{font-weight:700}
 .rules h3:first-child{margin-top:4px}
 .rules p{margin:0 0 4px}
 .rules ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
-.rules li::marker{color:var(--you)}
+.rules li::marker{color:var(--youEdge)}
 .rules b{color:var(--text);font-weight:600}
 .rules .mut{margin-top:5px;font-size:12px}
 
@@ -230,7 +250,7 @@ b{font-weight:700}
   padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 .overlay[hidden]{display:none}
 .page{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:20px;padding:28px 16px 24px}
-.page.tight{gap:12px;padding-top:24px}
+.page.tight{gap:12px;padding-top:24px;min-height:100%}   /* подпись драфта прижата к низу экрана */
 .page.result{gap:14px;padding-top:24px}
 .logo{display:flex;gap:8px}
 .logo i{width:44px;height:44px;border-radius:10px;background:var(--you);box-shadow:0 4px 0 var(--ink)}
@@ -239,10 +259,9 @@ b{font-weight:700}
 .lead{margin:0;font-size:15px;color:var(--dim);text-wrap:pretty}
 .stack{display:flex;flex-direction:column;gap:10px}
 .two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.bgold{display:flex;align-items:center;justify-content:center;height:58px;border-radius:16px;background:var(--gold);color:#2B1F00;
-  font-family:var(--num);font-size:16px;font-weight:700;box-shadow:0 5px 0 var(--goldEdge);text-align:center;width:100%}
-.bmain{height:56px;border-radius:16px;background:var(--gold);color:var(--goldInk);font-size:17px;font-weight:700;text-align:center;
-  box-shadow:0 8px 24px -10px rgba(255,197,61,.55);width:100%}
+/* золотые кнопки плоские, как «Бросить монетку»; в светлой теме с обводкой ctaEdge */
+.bgold,.bmain{display:flex;align-items:center;justify-content:center;height:56px;border-radius:16px;background:var(--gold);color:var(--goldInk);
+  font-size:17px;font-weight:700;text-align:center;box-shadow:inset 0 0 0 1.5px var(--ctaEdge),0 8px 24px -10px rgba(255,197,61,.55);width:100%}
 .bmain:disabled,.bline:disabled{opacity:.5;cursor:default}
 .bline{height:50px;border-radius:14px;background:var(--surf);border:2px solid var(--line);font-size:14.5px;font-weight:600;text-align:center;width:100%}
 .sect .bline{background:var(--surf2)}
@@ -261,13 +280,13 @@ b{font-weight:700}
 .opt{display:flex;flex-direction:column;gap:2px;min-height:56px;padding:9px 10px;border-radius:14px;background:var(--surf2);
   border:2px solid transparent;text-align:left;font-size:11.5px;color:var(--dim);line-height:1.25;min-width:0}
 .opt b{font-family:var(--num);font-size:13px;color:var(--text)}
-.opt[aria-pressed="true"]{border-color:var(--you)}
+.opt[aria-pressed="true"]{border-color:var(--youEdge)}
 .opt.c{min-height:48px;justify-content:center;align-items:center;text-align:center}
 .swt{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 12px 0 14px;border-radius:14px;
   background:var(--surf2);font-size:14px;font-weight:600}
 .swt i{display:flex;width:40px;height:24px;padding:3px;border-radius:999px;background:var(--line);transition:background .15s}
 .swt i::after{content:'';width:18px;height:18px;border-radius:50%;background:#FFFFFF;transition:margin .15s}
-.swt[aria-checked="true"] i{background:var(--you)}
+.swt[aria-checked="true"] i{background:var(--youEdge)}
 .swt[aria-checked="true"] i::after{margin-left:auto}
 .mhead{display:flex;align-items:center;gap:12px}
 .mhead>div{flex-grow:1;min-width:0;display:flex;flex-direction:column;gap:2px}
@@ -275,7 +294,7 @@ b{font-weight:700}
 .mhead span{font-size:13px;color:var(--dim)}
 .xbtn{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--surf)}
 .inp{width:100%;height:48px;padding:0 14px;border-radius:14px;background:var(--surf2);border:2px solid var(--line);color:inherit;font:inherit}
-.inp:focus{outline:none;border-color:var(--you)}
+.inp:focus{outline:none;border-color:var(--youEdge)}
 .who2{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:var(--surf2);font-size:14px}
 .who2 .sq{width:12px;height:12px}
 .who2 .ell{flex-grow:1}
@@ -283,14 +302,14 @@ b{font-weight:700}
 
 /* драфт */
 .kick{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;color:var(--dim)}
-.kick i{width:18px;height:18px;border-radius:5px;background:var(--you)}
-.kick i+i{background:var(--foe)}
+.kick i{width:18px;height:18px;border-radius:5px;background:var(--youEdge)}
+.kick i+i{background:var(--foeEdge)}
 .kick b{display:flex;gap:5px;font-weight:inherit}
 .page.tight h1{font-size:32px;letter-spacing:-.02em;line-height:1.1}
 .page.tight .lead{margin-bottom:6px;font-size:14px}
 .dname{display:inline-block;max-width:12em;vertical-align:bottom;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dcard{display:flex;align-items:center;gap:14px;min-height:72px;padding:12px 14px;border-radius:16px;background:var(--surf);
-  border:2px solid var(--line);box-shadow:0 4px 0 var(--ink);text-align:left;width:100%}
+  border:2px solid var(--line);text-align:left;width:100%}
 .dcard>div{flex-grow:1;display:flex;flex-direction:column;gap:2px;min-width:0}
 .dcard b{font-family:var(--num);font-size:16px}
 .dcard span{font-size:12.5px;color:var(--dim);line-height:1.35}
@@ -301,7 +320,7 @@ b{font-weight:700}
 .dcard:disabled{cursor:default}
 .dcard[data-wait]{opacity:.6}
 .dfoot{flex-grow:1;display:flex;align-items:flex-end;justify-content:center;gap:8px;min-height:40px;font-size:12.5px;color:var(--dim);text-align:center}
-.dfoot i{flex:none;width:8px;height:8px;border-radius:2px;background:var(--foe);margin-bottom:5px}
+.dfoot i{flex:none;width:8px;height:8px;border-radius:2px;background:var(--foeEdge);margin-bottom:5px}
 
 /* итог */
 .rhero{display:flex;flex-direction:column;gap:16px;padding:20px 18px;border-radius:24px;background:var(--surf)}
@@ -310,19 +329,20 @@ b{font-weight:700}
 .rhero p{margin:0;font-size:15px;color:var(--dim)}
 .rcards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .rcard{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px 14px 14px;border:3px solid var(--c);border-radius:14px;
-  background:color-mix(in srgb,var(--c) 16%,var(--surf2))}
-.rcard.a{--c:var(--you);--ci:var(--youInk)}.rcard.b{--c:var(--foe);--ci:var(--foeInk)}
+  background:color-mix(in srgb,var(--cr) 16%,var(--surf2))}
+.rcard.a{--c:var(--youEdge);--cr:var(--you);--cf:var(--youFill);--ci:var(--youInk)}.rcard.b{--c:var(--foeEdge);--cr:var(--foe);--cf:var(--foeFill);--ci:var(--foeInk)}
 .rcard .nm{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;font-weight:600;color:var(--dim)}
 .rcard .nm .sq{background:var(--c)}
 .rcard>b,.brow b,.trow b{white-space:nowrap}
 .page.result .bline{height:56px;font-size:15px}
-.rcard>b{font-family:var(--num);font-size:32px;font-weight:800;letter-spacing:-.02em;line-height:1}
-.rtag{align-self:flex-start;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:var(--c);color:var(--ci)}
+.page.result .bmain{font-size:16px}
+.rcard>b{font-family:var(--num);font-size:32px;font-weight:800;letter-spacing:-.02em;line-height:1;word-spacing:.15em}   /* пробел разрядов в Unbounded почти не виден */
+.rtag{align-self:flex-start;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:var(--cf);color:var(--ci)}
 .rtag.lost{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--dim)}
 .legend span{display:flex;align-items:center;gap:6px}
 .legend .ell{max-width:96px}
-.legend .sq.a{background:var(--you)}.legend .sq.b{background:var(--foe)}
+.legend .sq.a{background:var(--youEdge)}.legend .sq.b{background:var(--foeEdge)}
 .rblock{display:flex;flex-direction:column;gap:14px;padding:16px 16px 18px;border-radius:20px;background:var(--surf)}
 .rblock.tbl{gap:0;padding-bottom:10px}
 .rbh{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -332,7 +352,7 @@ b{font-weight:700}
 .brow{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:8px;align-items:center}
 .brow>i{height:8px;border-radius:999px;background:var(--surf2);overflow:hidden}
 .brow>i>i{display:block;height:100%;border-radius:999px}
-.brow.a>i>i{background:var(--you)}.brow.b>i>i{background:var(--foe)}
+.brow.a>i>i{background:var(--youEdge)}.brow.b>i>i{background:var(--foeEdge)}
 .brow b{text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
 .brow b.lo{font-weight:500;color:var(--dim)}
 .trow{display:grid;grid-template-columns:minmax(0,1fr) 52px 52px;gap:6px;padding:7px 0;border-top:1px solid var(--surf2);font-size:13px;color:var(--dim)}
@@ -346,6 +366,31 @@ b{font-weight:700}
 .srow b i{font-style:normal;color:var(--dim);font-weight:500;margin-left:6px}
 .srow small{color:var(--dim)}
 .note2{margin:0;font-size:12.5px;color:var(--dim);text-align:center}
+/* подтверждение «Начать заново»: затемнение и лист снизу поверх меню */
+.scrim{position:fixed;inset:0;z-index:10;background:rgba(7,8,12,.72)}
+:root[data-theme="light"] .scrim{background:rgba(40,30,20,.45)}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .scrim{background:rgba(40,30,20,.45)}}
+.scrim[hidden],.dlg[hidden]{display:none}
+.dlg{position:fixed;z-index:11;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:12px;
+  padding:12px 16px calc(24px + env(safe-area-inset-bottom,0px));border-radius:24px 24px 0 0;background:var(--surf)}
+.dlg h2{margin:4px 0 0;font-family:var(--num);font-size:20px;font-weight:800}
+.dlg p{margin:0 0 6px;font-size:14px;color:var(--dim)}
+.dlg button{height:52px;border-radius:14px;background:var(--surf2);font-size:15.5px;font-weight:700;text-align:center}
+.dlg .danger{background:var(--bad);color:var(--bg)}
+/* плашка «Отменить» после покупки перка */
+.undo{position:fixed;z-index:6;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom,0px));max-width:488px;margin:0 auto;
+  display:flex;align-items:center;gap:12px;height:56px;padding:0 8px 0 16px;border-radius:16px;background:var(--surf2);
+  box-shadow:0 0 0 1px var(--line),0 12px 32px -8px rgba(0,0,0,.5);font-size:14px}
+.undo[hidden]{display:none}
+.undo>span{flex-grow:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.undo>span b{font-weight:600}
+.undo>span i{font-style:normal;font-weight:700;color:var(--bad)}
+.undo button{flex:none;height:44px;padding:0 14px;border-radius:12px;background:var(--surf);font-weight:700}
+/* короткий экран (< ~700 px): клетки ниже, «ещё N до победы» скрыто, экран прокручивается */
+.compact .cell{height:108px}
+.compact .capv{display:none}
+.compact .pawns{flex-direction:row;gap:6px}
+.compact .pawn{min-width:0;padding:0 10px}
 @media (prefers-reduced-motion:reduce){.coin.flip{animation:none}.hit{animation:none;opacity:0}}
 </style>
 </head>
@@ -397,13 +442,18 @@ b{font-weight:700}
     <div class="pane" data-tab="rules" hidden><div class="rules" id="rules"></div></div>
   </div>
 </div></div>
+<div class="undo" id="undo" role="status" hidden><span></span><button>Отменить</button></div>
 <div class="overlay" id="ov" hidden><div class="page" id="panel"></div></div>
+<div class="scrim" id="scrim" hidden></div>
+<div class="dlg" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT" hidden></div>
 <script>
 const MAXLV=10, BASE_SALARY=60;
 /* Доля ренты, которая достаётся владельцу; остальное сгорает. Балансовый рычаг:
    чем меньше, тем хуже Аренда как источник дохода и тем безопаснее её игнорировать. */
 let RENT_KEEP=.5;
-const COLORS=[['#7B61FF','фиолетовый',258],['#38D9A9','мятный',165],['#4CC9F0','голубой',195],['#FF5470','малиновый',348],['#FFC53D','жёлтый',43],['#B5E853','лаймовый',82]];
+/* Мятный, малиновый и жёлтый убраны: совпадали с «+», «−» и монеткой. */
+const COLORS=[['#7B61FF','фиолетовый',250],['#3B82F6','синий',217],['#4CC9F0','голубой',194],
+              ['#FF8A3D','оранжевый',24],['#E879F9','розовый',292],['#B5E853','лаймовый',81]];
 const hueOf=c=>(COLORS.find(x=>x[0]===c)||COLORS[0])[2];
 function foeColor(from){
   const h=hueOf(from||cfg.color);
@@ -471,7 +521,8 @@ const sfx={
 };
 const goal=()=>table.goal;
 try{Object.assign(cfg,JSON.parse(localStorage.getItem('duel-cfg'))||{})}catch(e){}
-if(!GOALS.some(([g])=>g===cfg.goal))cfg.goal=600;   // порог пересчитан, старое сохранённое значение недостижимо
+if(!GOALS.some(([g])=>g===cfg.goal))cfg.goal=600;
+if(!COLORS.some(([c])=>c===cfg.color))cfg.color=COLORS[0][0];   // цвет из прежней палитры   // порог пересчитан, старое сохранённое значение недостижимо
 /* Настройки партии фиксируются в resetTable(): cfg — это выбор на СЛЕДУЮЩУЮ партию, и если
    читать его на лету, смена цели или соперника в меню меняла бы правила посреди игры. */
 const tableFrom=o=>({goal:o.goal,diff:o.diff,start:o.start,draft:!!o.draft});
@@ -488,15 +539,20 @@ const PERKS=[
   /* Демпинг заменил Страховку — по всем замерам самый слабый перк. Это ответ Конторе:
      у неё не было контригры, зарплата капала, что бы ни делал соперник. Срезанное сгорает,
      а не переходит владельцу: в гонке к цели перевод удваивал бы разрыв. */
+  /* fmt по образцу прежней Страховки — на живых числах: «его зарплата 80» / «его зарплата 72».
+     Процент в строку карточки не влезает (на 375 px обрезался бы), он есть в «?» и в логе.
+     p — владелец перка; «ваша» — когда Демпинг соперника смотрю я. */
   {k:'dump',n:'Демпинг',d:'Срезает зарплату соперника, пока вы оба дома.',
-   val:l=>10*l, fmt:l=>l?`его зарплата −${10*l}%`:'не действует',
+   val:l=>10*l, fmt:(l,p)=>{const f=p&&P.length?foeOf(p):null;
+     if(!f)return l?`его зарплата −${10*l}%`:'не действует';
+     const s=salary(f);return `${f===meP()?'ваша':'его'} зарплата ${Math.round(s*(1-Math.min(1,l/10)))}`},
    cost:[50,70,90,115,150,190,240,300,375,470], unlock:p=>total(p)>=3},
   {k:'route',n:'Логистика',d:'Бонус за возвращение домой с чужого квадрата.',
-   val:l=>36*l, fmt:l=>l?`+${36*l} за возвращение`:'бонуса нет',
+   val:l=>36*l, fmt:l=>l?`+${36*l} за возврат`:'бонуса нет',
    cost:[45,60,80,105,135,175,225,285,360,450], unlock:p=>total(p)>=3},
   {k:'raid',n:'Рэкет',d:'Стоя в гостях, вы забираете часть ренты соперника обратно.',
-   val:l=>12*l, fmt:l=>{const foe=P[1],r=foe?Math.round(rentOf(foe)*inflation()*.12*l):0;
-     return l?`возвращаете ${12*l}% его ренты${r?`: ${r}`:''}`:'ничего не возвращаете'},
+   val:l=>12*l, fmt:(l,p)=>{const foe=p&&P.length?foeOf(p):P[1],r=foe?Math.round(rentOf(foe)*inflation()*.12*l):0;
+     return l?`${12*l}% его ренты${r?`: ${r}`:''}`:'ничего не возвращаете'},
    cost:[50,70,90,115,150,190,240,300,375,470], unlock:p=>total(p)>=3},
 ];
 const PK=PERKS.map(p=>p.k);
@@ -534,7 +590,7 @@ function stateHash(){
   let h=7;
   const add=x=>{const t=String(x);for(let i=0;i<t.length;i++)h=(Math.imul(h,31)+t.charCodeAt(i))|0};
   add(turn);add(rounds);add(rndS);
-  P.forEach(p=>{add(p.pos);add(p.money);add(p.streak);add(p.built?1:0);add(p.cd);add(p.force||'');add(p.ban||'');
+  P.forEach(p=>{add(p.pos);add(p.money);add(p.streak);add(p.built?1:0);add(p.cd);add(p.force||'');add(p.ban||'');add(p.undo?p.undo.k:'');
     PK.forEach(k=>{add(p.lv[k]);add(p.off[k]?1:0)});TK.forEach(k=>{add(p.tok[k]);add(p.tokBuys[k])})});
   return h>>>0;
 }
@@ -758,7 +814,7 @@ function renderRules(){
 renderRules();
 
 let tab='perks',note='',openInfo='',finished=true,showInfl=false;
-const ring=(l,cls)=>`<span class="ring ${cls}" style="--p:${l*36}deg"><b>${l}</b></span>`;
+const ring=(l,cls)=>`<span class="ring ${cls}" style="--p:${l*36}deg"><b${l>=10?' class="x"':''}>${l}</b></span>`;
 const LOCK='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 /* Косметика хода: кто бросал последним, что показать в карточке события и какой вопрос
    сейчас задан игроку. В расчёт партии не входит, поэтому здесь можно meP()/mySeat. */
@@ -791,23 +847,23 @@ function render(){
     const n=p.streak||0;
     $('sub'+i).textContent=atHome(p)
       ?(n>=2?'следующий ход — переход':`дома · зарплата ${salary(p)}`)
-      :(n>=2?'следующий ход — домой':'в гостях · платит ренту');
+      :(n>=2?'следующий ход — домой':'в гостях');
     hud.classList.toggle('tired',n>=2);
     $('bar'+i).hidden=!g;
     $('cap'+i).style.width=g?(Math.min(1,capital(p)/g)*100).toFixed(0)+'%':'0%';
-    $('capv'+i).textContent=g?`${p.money} из ${g} до победы`:'';
+    $('capv'+i).textContent=g?`ещё ${Math.max(0,g-p.money)} до победы`:'';
     const d=evCard&&evCard.deltas?evCard.deltas[seat]:0,db=$('dslot'+i);
     db.hidden=!d;if(d){db.textContent=sgn(d);db.className='dbadge '+(d>0?'pos':'neg')}
   });
   // поле
   $('ttlA').textContent='ваша клетка';
   $('ttlB').textContent='клетка '+foe.name;
-  const inf=inflation(),mult=inf.toFixed(1).replace('.',',');
+  const inf=inflation();
   [['rentA',me],['rentB',foe]].forEach(([id,p])=>{
     const el=$(id),base=rentOf(p);
     if(p.off.rent&&p.lv.rent>0){el.className='rent off';el.textContent=`Аренда ${p.lv.rent} ур. выключена`;return}
     el.className='rent'+(el.classList.contains('bump')?' bump':'');
-    el.innerHTML=`рента <b>${Math.round(base*inf)}</b>${inf>1&&base?`<u>×${mult}</u>`:''}`;
+    el.innerHTML=`рента <b>${Math.round(base*inf)}</b>`;   // число уже с инфляцией, множитель не пишем
   });
   ['A','B'].forEach((sfx,i)=>{
     const cellIdx=ord[i];
@@ -856,56 +912,85 @@ function render(){
     const p=P[turn];
     a.innerHTML=`<div class="statusline ${cls(p)}" role="status"><span class="sq"></span><span class="ell">Сейчас ходит ${escHtml(p.name)}</span></div>`;
   }
-  // жетоны под полем
+  // жетоны под полем; при нуле — пунктир и «+», нажатие ведёт к покупке в листе ниже
   const home=atHome(me),locked=!idleCtx||over,cd=cdLeft(me);
   $('toks').innerHTML=TK.map(k=>{
     const t=TOKENS[k],have=me.tok[k];
+    if(!have)return `<button class="tk none" data-shop="${k}" aria-label="${t.n}: нет жетонов, купить в листе ниже">${t.n}<span class="cnt">+</span></button>`;
     const blocked=k==='anchor'&&me.streak>=2;   // третий ход на месте всё равно станет переходом
-    const usable=!locked&&have>0&&cd===0&&!blocked&&k!=='reroll';
-    return `<button class="tk${usable?' can':''}${have?'':' none'}" data-use="${k}" ${usable?'':'disabled'}
+    const usable=!locked&&cd===0&&!blocked&&k!=='reroll';
+    return `<button class="tk${usable?' can':''}" data-use="${k}" ${usable?'':'disabled'}
       aria-label="${t.n}: ${have}${usable?', применить':''}">${t.n}<span class="cnt">${have}</span></button>`}).join('');
   $('toks').querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'use',key:b.dataset.use})});
+  $('toks').querySelectorAll('[data-shop]').forEach(b=>b.onclick=goShop);
   // лист перков
   $('perks').innerHTML=PERKS.map(pk=>{
     const l=me.lv[pk.k],c=cost(me,pk.k),unlocked=open(me,pk.k),off=!!me.off[pk.k];
     if(me.ban===pk.k)return `<div class="pk banned"><span class="lock">${LOCK}</span><div class="pkbody">
       <span class="pname">${pk.n}</span><span class="why">закрыт соперником в драфте</span></div></div>`;
-    /* Постоянные причины (перк ещё закрыт, максимум) — строкой в карточке: они меняются раз за партию.
-       Причины хода (дома/в гостях, уже строили, мало денег) — на самой кнопке вместо «поднять»:
-       отдельной строкой они то появлялись, то пропадали, и карточка прыгала по высоте каждый ход. */
-    const why=!unlocked?`нужно 3 уровня в любых перках, сейчас ${total(me)}`:c===null?'максимум':'';
-    const busyWhy=locked||why?'':!home?'только дома':me.built?'уже строили':me.money<c?'мало денег':'';
-    const ready=unlocked&&c!==null&&!why&&!busyWhy&&!locked;
-    // выключенный перк — те же две строки, что и включённый: что капает сейчас и что будет после включения
-    const now=off?`выключен: ${pk.fmt(0)}`:unlocked?`сейчас: ${pk.fmt(l)}`:pk.d;
-    const next=off?`включите — ${pk.fmt(l)}`:unlocked&&c!==null?`станет: ${pk.fmt(l+1)}`:'';
-    return `<div class="pk${ready?' ready':''}${off?' paused':''}" ${ready?`data-buy="${pk.k}" role="button" tabindex="0"`:''}><div class="pkrow">${ring(l,'a')}
-      <div class="pkbody"><span class="pname">${pk.n}<button class="q" data-info="${pk.k}" aria-label="Как работает ${pk.n}">?</button>
-          ${l>0?`<button class="psw" role="switch" data-tog="${pk.k}" aria-checked="${!off}" aria-label="${pk.n}: ${off?'выключен, включить':'работает, выключить'}" ${locked?'disabled':''}></button>`:''}</span>
-        <span class="now">${now}</span>${next?`<span class="next">${next}</span>`:''}${why?`<span class="why">${why}</span>`:''}</div>
-      ${c!==null&&unlocked?`<button class="up" ${ready?'':'disabled'} tabindex="-1"><span>${busyWhy||'поднять'}</span><b>${c}</b></button>`:''}</div>
-      ${openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:''}</div>`;
-  }).join('')+`<div class="shophead"><b>Жетоны монетки</b><span>тоже тратят действие хода</span></div>`
+    const info=`<button class="q" data-info="${pk.k}" aria-label="Как работает ${pk.n}"><i>?</i></button>`;
+    const sw=l>0?`<button class="psw" role="switch" data-tog="${pk.k}" aria-checked="${!off}" aria-label="${pk.n}: ${off?'выключен, включить':'включён, выключить'}" ${locked?'disabled':''}><i></i></button>`:'';
+    const howto=openInfo===pk.k?`<span class="howto">${HOWTO[pk.k]}</span>`:'';
+    const card=(cls,attrs,body,price)=>`<div class="pk${cls}" ${attrs}><div class="pkrow">${ring(l,'a')}
+      <div class="pkbody"><span class="pname">${pk.n}${info}</span>${body}</div>${sw}${price}</div>${howto}</div>`;
+    // максимальный уровень: только значение, вместо цены «макс. уровень», карточка не нажимается
+    if(c===null)return card(off?' paused':'','',`<span class="next">${off?`выключен: ${pk.fmt(0,me)}`:pk.fmt(l,me)}</span>`,
+      `<span class="up max">макс.<br>уровень</span>`);
+    if(!unlocked)return card('','',`<span class="now">нужно 3 уровня в любых перках</span><span class="why">сейчас ${total(me)} из 3</span>`,'');
+    /* Причина хода — под ценой, вместо «поднять»: отдельной строкой в карточке она то появлялась,
+       то пропадала, и карточка прыгала по высоте. Красным — только нехватка денег. */
+    const why=locked?'':!home?'только дома':me.money<c?`не хватает ${c-me.money}`:me.built?'уже строили':'';
+    const ready=!locked&&!why;
+    // выключенный перк — те же две строки: что капает сейчас и что будет после включения
+    const now=off?`выключен: ${pk.fmt(0,me)}`:`сейчас: ${pk.fmt(l,me)}`;
+    const next=off?`включите — ${pk.fmt(l,me)}`:`станет: ${pk.fmt(l+1,me)}`;
+    const price=why?`<span class="up no" aria-label="${pk.n}: ${why}"><b>${c}</b><span class="${me.money<c?'short':''}">${why}</span></span>`
+      :`<span class="up"><span>поднять</span><b>${c}</b></span>`;
+    return card((ready?' ready':'')+(off?' paused':''),ready?`data-buy="${pk.k}" role="button" tabindex="0" aria-label="${pk.n}: поднять за ${c}"`:'',
+      `<span class="now">${now}</span><span class="next">${next}</span>`,price);
+  }).join('')+`<div class="shophead" id="shop"><b>Жетоны монетки</b><span>тоже тратят действие хода</span></div>`
     +TK.map(k=>{
       const t=TOKENS[k],price=tokPrice(me,k),ok=!me.built&&!locked&&me.money>=price;
       return `<div class="tkshop"><span class="num">${me.tok[k]}</span><div class="pkbody"><span class="pname">${t.n}</span>
         <span class="d">${t.d}</span></div>
         <button class="buy" data-tok="${k}" ${ok?'':'disabled'}><span>${home?'купить':'в гостях'}</span><b>${price}</b></button></div>`}).join('');
-  // покупка — по всей карточке, как было до редизайна; «?» и переключатель гасят всплытие
+  // покупка — по всей карточке; «?» и переключатель гасят всплытие
   $('perks').querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'buy',key:b.dataset.buy})});
   $('perks').querySelectorAll('[data-info]').forEach(q=>q.onclick=e=>{e.stopPropagation();openInfo=openInfo===q.dataset.info?'':q.dataset.info;render()});
   $('perks').querySelectorAll('[data-tog]').forEach(q=>q.onclick=e=>{e.stopPropagation();if(idleCtx)idleCtx.send({k:'toggle',key:q.dataset.tog})});
   $('perks').querySelectorAll('[data-tok]').forEach(b=>b.onclick=()=>{if(idleCtx)idleCtx.send({k:'tok',key:b.dataset.tok})});
+  renderUndo();
   // перки соперника
   $('foeperks').innerHTML=PERKS.map(pk=>{
     const st=foe.ban===pk.k?'banned':foe.off[pk.k]?'paused':'';
-    const txt=st==='banned'?'закрыт вами в драфте':st==='paused'?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k]):'ещё закрыт';
+    const txt=st==='banned'?'закрыт вами в драфте':st==='paused'?`выключен, уровень ${foe.lv[pk.k]}`:open(foe,pk.k)?pk.fmt(foe.lv[pk.k],foe):'ещё закрыт';
     return `<div class="frow ${st}">${st==='banned'?`<span class="lock">${LOCK}</span>`:ring(foe.lv[pk.k],'b')}
       <div class="pkbody"><span class="pname">${pk.n}</span><span class="now">${txt}</span></div></div>`}).join('');
   document.querySelectorAll('.pane').forEach(p=>p.hidden=p.dataset.tab!==tab);
   document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
   // экран драфта зависит от кнопок, которые выставляет evAsk, — обновляем его вместе с полем
   if(draftUI)showDraft();
+}
+/* Плашка «Отменить» живёт ~3 секунды по часам, а не по темпу: это время на реакцию игрока.
+   Показывается, только пока покупку ещё можно откатить (p.undo не снят другим действием). */
+let undoToast=null;
+function showUndo(k){
+  const until=Date.now()+3000;undoToast={k,until};
+  setTimeout(()=>{if(undoToast&&undoToast.until===until){undoToast=null;renderUndo()}},3050);
+}
+function renderUndo(){
+  const el=$('undo'),me=meP(),u=me&&me.undo;
+  const on=!!(undoToast&&u&&u.k===undoToast.k&&idleCtx&&idleCtx.p===me&&!over&&Date.now()<undoToast.until);
+  el.hidden=!on;if(!on)return;
+  el.querySelector('span').innerHTML=`<b>${perk(u.k).n}: ${me.lv[u.k]} ур.</b> <i>−${u.c}</i>`;
+}
+$('undo').querySelector('button').onclick=()=>{undoToast=null;if(idleCtx)idleCtx.send({k:'undo'});renderUndo()};
+// жетон на нуле ведёт к магазину жетонов в листе перков
+function goShop(){
+  tab='perks';render();
+  const h=$('shop');if(!h)return;
+  h.scrollIntoView({behavior:sp()?'smooth':'auto',block:'start'});
+  h.classList.remove('flash');void h.offsetWidth;h.classList.add('flash');
 }
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{tab=t.dataset.tab;render()});
 $('menuBtn').onclick=()=>showSetup();
@@ -919,9 +1004,21 @@ document.addEventListener('pointerdown',unlockAudio,{passive:true});
 function buy(p,k){
   if(!PK.includes(k)||!atHome(p)||!open(p,k)||p.built)return;
   const c=cost(p,k);if(c===null||p.money<c)return;
+  // снимок для отмены: seen тоже, иначе отменённый третий уровень оставил бы открытыми Логистику и Рэкет
+  p.undo={k,c,seen:{...p.seen}};
   p.money-=c;p.lv[k]++;p.built=true;p.st.bought++;
-  if(p===meP())sfx.buy();else sfx.foeBuy();
-  log(`${p.name}: ${perk(k).n} до ${p.lv[k]} уровня за ${c}, ${perk(k).fmt(p.lv[k])}`);
+  // плашка «−85» у счёта; бот строит сразу после броска — у него она затёрла бы итог броска
+  if(!p.bot)evCard={deltas:{[p.id]:-c}};
+  if(p===meP()){sfx.buy();if(!p.bot&&!replaying)showUndo(k)}else sfx.foeBuy();
+  log(`${p.name}: ${perk(k).n} до ${p.lv[k]} уровня за ${c}, ${perk(k).fmt(p.lv[k],p)}${k==='dump'?` (−${10*p.lv[k]}%)`:''}`);
+}
+/* Отмена покупки — отдельное событие в общем журнале, поэтому откатывается у обоих клиентов.
+   Можно только сразу: любое другое действие хода или бросок снимают p.undo. */
+function undoBuy(p){
+  const u=p.undo;if(!u)return;
+  p.undo=null;p.lv[u.k]--;p.money+=u.c;p.built=false;p.st.bought--;p.seen=u.seen;evCard=null;
+  if(p===meP())sfx.click();
+  log(`${p.name}: покупка отменена, ${perk(u.k).n} снова ${p.lv[u.k]} уровня, +${u.c}`);
 }
 function autoSell(p){
   const owned=PK.filter(k=>p.lv[k]>0);
@@ -956,7 +1053,7 @@ async function coverDebt(p,need){
   return true;
 }
 async function flip(p){
-  const g=gen;busy=true;acts=[];note='';lastFlip=null;evCard=null;render();
+  const g=gen;busy=true;acts=[];note='';lastFlip=null;evCard=null;p.undo=null;render();
   const alive=()=>g===gen&&!over;
   let v;
   // значение просим сразу, анимация крутится параллельно — сетевая задержка прячется под ней
@@ -1203,6 +1300,8 @@ async function idlePhase(p){
     const ev=await evStall(seq,p.id,()=>evEmit({kind:'act',seat:p.id,seq,v:{k:'roll'}}));
     const a=ev.v;
     if(!a||typeof a!=='object'||typeof a.k!=='string')continue;
+    if(a.k==='undo'){undoBuy(p);render();continue}
+    if(a.k!=='toggle')p.undo=null;   // переключатель действие не тратит, отмену не сбивает
     if(a.k==='roll')return;
     if(a.k==='use'){if(useToken(p,a.key))return;continue}
     if(a.k==='buy')buy(p,a.key);
@@ -1328,7 +1427,21 @@ function showMenu(keep){
         ${nextGameFields('Цвет фишки')}<button class="bline" id="play">Начать заново</button></div>
       <div class="${st?'two':'stack'}"><button class="bline" id="goRoom">С человеком</button>${st?'<button class="bline" id="goStats">Моя статистика</button>':''}</div>`}`,'',keep);
   bindSettings(showMenu);
+  if($('play'))$('play').onclick=askRestart;
   $('goCancel').onclick=$('goBack').onclick=()=>{$('ov').hidden=true};
+}
+/* Перезапуск посреди партии — только через подтверждение: кнопка стоит под настройками,
+   и её легко задеть, пока меняешь соперника или цель. */
+function askRestart(){
+  const me=meP(),foe=foeP();
+  const close=()=>{$('scrim').hidden=true;$('dlg').hidden=true};
+  $('dlg').innerHTML=`<span class="grip"></span><h2 id="dlgT">Начать заново?</h2>
+    <p>Текущая партия закончится без результата. Круг ${rounds+1}, Вы ${me.money}, ${escHtml(foe.name)} ${foe.money}.</p>
+    <button class="danger" id="dlgGo">Начать заново</button><button id="dlgBack">Вернуться к партии</button>`;
+  $('scrim').hidden=false;$('dlg').hidden=false;
+  $('scrim').onclick=close;
+  $('dlgGo').onclick=()=>{close();reset()};
+  $('dlgBack').onclick=()=>{close();$('ov').hidden=true};
 }
 /* Драфт — свой экран поверх поля. Выбор идёт тем же evAsk, что и раньше: экран лишь
    нажимает соответствующую кнопку, поэтому порядок событий и синхронизация не меняются. */
@@ -1340,12 +1453,11 @@ function showDraft(){
   const fn=escHtml(foe.name);
   // честно: против бота он выбирает после вас; по сети второй игрок видит, что первый уже выбрал
   const foot=i!==mySeat?`${fn} выбирает…`:mySeat===0?`${fn} выберет после вас, ваш выбор не увидит`:`${fn}: выбор сделан`;
-  const zero={lv:Object.fromEntries(PK.map(k=>[k,0]))};
   openPage(`<div class="kick"><b><i></i><i></i></b>перед первым броском</div>
     <h1>Закройте сопернику один перк</h1>
     <p class="lead">На всю партию. Ваш выбор <span class="dname">${fn}</span> увидит, только когда решит сам.</p>
     ${PERKS.map(pk=>{const ok=banAllowed(pk.k);return `<button class="dcard${draftUI.pick===pk.k?' pick':''}" data-ban="${pk.k}" ${canPick&&ok?'':'disabled'} ${(!canPick&&!draftUI.pick)||!ok?'data-wait':''}>
-      <div><b>${pk.n}</b><span>${pk.d}</span>${!ok?'<small>без цели по накоплениям закрыть нельзя</small>':pk.unlock(zero)?'':'<small>открывается после 3 уровней</small>'}</div>
+      <div><b>${pk.n}</b><span>${pk.d}</span>${!ok?'<small>без цели по накоплениям закрыть нельзя</small>':''}</div>
       <span class="dl">${LOCK}</span></button>`}).join('')}
     <div class="dfoot"><i></i><span class="ell">${foot}</span></div>`,'tight',!!document.querySelector('.dcard'));
   $('panel').querySelectorAll('[data-ban]').forEach(b=>b.onclick=()=>{
@@ -1358,18 +1470,36 @@ function showDraft(){
    к следующей. В сетевой партии они и так приходят с сервера и меняться не могут. */
 let tableCols=null;
 function applyColor(){
-  const r=document.documentElement;
   const live=P.length>0&&!finished;
   const [you,foe]=MP&&mp.cols?mp.cols:live&&tableCols?tableCols:[cfg.color,foeColor()[0]];
-  r.style.setProperty('--you',you);
-  r.style.setProperty('--foe',foe);
-  r.style.setProperty('--youInk',inkOn(you));
-  r.style.setProperty('--foeInk',inkOn(foe));
+  /* Производные цвета — под текущую тему (renderVals() макета): fill затемняется, пока текст на нём
+     не станет контрастным (≥ 4.5), edge — пока рамка не отделится от surf (≥ 3). Исходный цвет
+     остаётся только у полупрозрачной заливки клеток. */
+  paintChip('you',you);paintChip('foe',foe);
 }
-function inkOn(hex){
-  const c=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);
-  return .2126*c[0]+.7152*c[1]+.0722*c[2]>.2?'#15131C':'#FFFFFF';
+function paintChip(k,c){
+  const r=document.documentElement,surf=getComputedStyle(r).getPropertyValue('--surf').trim();
+  r.style.setProperty('--'+k,c);
+  r.style.setProperty('--'+k+'Ink',inkOn(c));
+  r.style.setProperty('--'+k+'Fill',fillOf(c));
+  r.style.setProperty('--'+k+'Edge',edgeOf(c,surf));
 }
+const rgbOf=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const lumOf=h=>{const c=rgbOf(h).map(v=>v/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2]};
+const contrast=(a,b)=>{const x=lumOf(a),y=lumOf(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
+const shade=(h,k)=>'#'+rgbOf(h).map(v=>Math.round(v*k).toString(16).padStart(2,'0')).join('');
+const inkOn=hex=>lumOf(hex)>.2?'#15131C':'#FFFFFF';
+function fillOf(h){const i=inkOn(h);let c=h;for(let k=.96;contrast(c,i)<4.5&&k>.4;k-=.04)c=shade(h,k);return c}
+function edgeOf(h,surf){if(!/^#[0-9a-fA-F]{6}$/.test(surf))return h;let c=h;for(let k=.96;contrast(c,surf)<3&&k>.3;k-=.04)c=shade(h,k);return c}
+/* Короткий экран (< ~700 px): клетки ниже и без строк «ещё N до победы», чтобы кнопка броска
+   помещалась; остальное доступно прокруткой. */
+function applyCompact(){
+  const h=(inTG&&(TG.viewportStableHeight||TG.viewportHeight))||window.innerHeight;
+  document.documentElement.classList.toggle('compact',h<700);
+}
+window.addEventListener('resize',applyCompact);
+// тема браузера сменилась — edge считается от surf, его надо пересчитать
+try{matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{applyColor();render()})}catch(e){}
 // t — настройки партии от хозяина комнаты; в одиночной игре берутся из выбранных в меню
 function resetTable(seats,seed,t){
   table=t||tableFrom(cfg);
@@ -1419,13 +1549,14 @@ function applyViewport(){
   if(!inTG)return;
   const h=TG.viewportStableHeight||TG.viewportHeight;
   if(h)document.documentElement.style.setProperty('--app-h',h+'px');
+  applyCompact();
 }
 function initTG(){
   if(!inTG)return;
   try{TG.ready();TG.expand()}catch(e){}
   if(tgAtLeast('7.7'))try{TG.disableVerticalSwipes()}catch(e){}   // иначе свайп по перкам сворачивает мини-апп
   applyTheme();applyViewport();
-  try{TG.onEvent('themeChanged',()=>{applyTheme();render()});TG.onEvent('viewportChanged',applyViewport)}catch(e){}
+  try{TG.onEvent('themeChanged',()=>{applyTheme();applyColor();render()});TG.onEvent('viewportChanged',applyViewport)}catch(e){}
 }
 function myUid(){
   let u=null;try{u=localStorage.getItem(UIDKEY)}catch(e){}
@@ -1543,7 +1674,7 @@ function mpMsg(m){
     mp.code=m.code;mp.want=m.code;mp.members=m.members||[];mp.host=m.host;mp.you=m.you;mp.diff=m.diff;
     const mine=mp.members.find(x=>x.uid===mp.you);
     // цвет мог достаться не тот, что сохранён (занят) — интерфейс лобби красим выданным
-    if(mine&&mine.color&&!MP)document.documentElement.style.setProperty('--you',mine.color);
+    if(mine&&mine.color&&!MP)paintChip('you',mine.color);
     if(mine&&!mine.color){
       const taken=takenColors();
       const pick=taken.includes(cfg.color)?(COLORS.find(([c])=>!taken.includes(c))||[])[0]:cfg.color;
@@ -1637,6 +1768,7 @@ function showLobby(){
 
 initTG();
 applyColor();
+applyCompact();
 flushResults();
 /* Приглашение приходит ссылкой ?room=CODE или диплинком startapp=CODE и ведёт прямо в комнату, мимо настроек. */
 const joinCode=(()=>{
